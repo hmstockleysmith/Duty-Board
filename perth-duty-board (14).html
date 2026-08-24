@@ -1,0 +1,3013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Perth Station · E-Duty Board</title>
+<!-- ===== PWA: installable on phones when served over HTTPS (e.g. GitHub Pages). ===== -->
+<meta name="theme-color" content="#12161b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Perth Duty Board">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='36' fill='%2312161b'/%3E%3Crect x='24' y='40' width='132' height='16' rx='4' fill='%23e8b73a'/%3E%3Crect x='24' y='68' width='132' height='16' rx='4' fill='%23c74436'/%3E%3Crect x='24' y='96' width='90' height='16' rx='4' fill='%234a8f5c'/%3E%3Ctext x='90' y='150' font-family='monospace' font-size='28' font-weight='bold' fill='%23e6e2d8' text-anchor='middle'%3EDUTY%3C/text%3E%3C/svg%3E">
+<script>
+// Inline manifest via blob URL — keeps the app single-file. Icon is an inline SVG data URI.
+(function(){
+  const iconSvg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%2312161b'/><rect x='64' y='110' width='384' height='44' rx='10' fill='%23e8b73a'/><rect x='64' y='186' width='384' height='44' rx='10' fill='%23c74436'/><rect x='64' y='262' width='260' height='44' rx='10' fill='%234a8f5c'/><text x='256' y='420' font-family='monospace' font-size='80' font-weight='bold' fill='%23e6e2d8' text-anchor='middle'>DUTY</text></svg>";
+  const manifest = {
+    name: "Perth Duty Board",
+    short_name: "Duty Board",
+    description: "Perth Fire Station electronic duty board — concept demonstrator",
+    start_url: ".",
+    scope: ".",
+    display: "standalone",
+    background_color: "#12161b",
+    theme_color: "#12161b",
+    icons: [
+      { src: "data:image/svg+xml," + iconSvg, sizes: "512x512", type: "image/svg+xml", purpose: "any" }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type: "application/json"});
+  const link = document.createElement("link");
+  link.rel = "manifest";
+  link.href = URL.createObjectURL(blob);
+  document.head.appendChild(link);
+  // Service worker for offline capability. Only registers when served over http(s) —
+  // silently skipped on file:// so the plain downloaded file behaves exactly as before.
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    const swSrc = "const C='perth-duty-v1';self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.add('./')).then(()=>self.skipWaiting()))});self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).then(r=>{const cl=r.clone();caches.open(C).then(c=>c.put(e.request,cl));return r}).catch(()=>caches.match(e.request)))});";
+    const swBlob = new Blob([swSrc], {type: "application/javascript"});
+    navigator.serviceWorker.register(URL.createObjectURL(swBlob), {scope: "./"}).catch(()=>{
+      // Some browsers refuse blob-URL workers; the app still runs, just without offline
+      // caching. A real sw.js file fixes this — see hosting notes.
+    });
+  }
+})();
+</script>
+<style>
+  :root{
+    --bg:#12161b; --panel:#1a2027; --panelhi:#212a33; --line:#2c3843;
+    --text:#dfe7ee; --dim:#8fa0af; --faint:#5c6b78;
+    --red:#ff4d42; --redbg:#3a1713; --amber:#ffb224; --amberbg:#3a2c0e;
+    --green:#43cf8c; --greenbg:rgba(18,49,35,.6); --blue:#5ab0ff; --plate:#b3261e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;min-height:100vh;padding-bottom:140px}
+  button{font-family:inherit;cursor:pointer}
+  header{border-bottom:3px solid var(--plate);padding:14px 16px 10px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+  .eyebrow{font-size:11px;letter-spacing:4px;color:var(--dim);font-weight:700}
+  h1{font-size:24px;font-weight:900;letter-spacing:1px}
+  .shiftsel{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:10px;vertical-align:middle}
+  .shiftsel button{background:none;border:none;color:var(--dim);font-size:13px;font-weight:900;padding:6px 14px;letter-spacing:1px}
+  .shiftsel button.on{background:var(--plate);color:#fff}
+  .shiftsel button.nowdot{position:relative}
+  .shiftsel button.nowdot::after{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--green)}
+  .dutynow{margin-top:6px;font-size:12px;font-weight:700;letter-spacing:1px;color:var(--green)}
+  .jumpbtn{margin-left:8px;background:transparent;border:1px solid var(--amber);color:var(--amber);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:800}
+  .strip{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
+  .chip{display:flex;align-items:baseline;gap:6px;padding:6px 14px;border-radius:8px;border:1px solid}
+  .chip .lbl{font-size:11px;font-weight:800;letter-spacing:2px}
+  .chip .val{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+  .chip .of{font-size:12px;color:var(--dim)}
+  .ok{background:var(--greenbg);border-color:rgba(67,207,140,.4)!important;color:var(--green)}
+  .bad{background:var(--redbg);border-color:rgba(255,77,66,.4)!important;color:var(--red)}
+  .clock{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--dim);margin-left:6px}
+  #ticker{padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel);font-size:14px;font-weight:600;min-height:34px}
+  .t-ok{color:var(--green)} .t-warn{color:var(--amber)} .t-info{color:var(--blue)} .t-bad{color:var(--red)}
+  nav{display:flex;border-bottom:1px solid var(--line)}
+  nav button{background:none;border:none;color:var(--dim);font-size:12px;font-weight:800;letter-spacing:2px;padding:12px 20px;border-bottom:3px solid transparent}
+  nav button.active{color:var(--text);border-bottom-color:var(--plate)}
+  main{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px;padding:16px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .panel>.hd{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);font-size:11px;font-weight:800;letter-spacing:2.5px;color:var(--dim);text-transform:uppercase}
+  .panel>.bd{padding:10px}
+  .col{display:grid;gap:12px}
+  .rowbtn{width:100%;text-align:left;background:var(--panelhi);border:1px solid var(--line);border-radius:8px;padding:12px;color:var(--text);display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:52px}
+  .rowbtn .nm{font-size:16px;font-weight:800}
+  .searchbox{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;margin-bottom:10px}
+  .searchbox::placeholder{color:var(--faint)}
+  .grouplbl{font-size:10px;font-weight:800;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin:4px 0 6px}
+  .grouplbl.sub{color:var(--faint);margin-top:8px}
+  .grouptoggle{width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);color:var(--blue);font-size:12px;font-weight:800;letter-spacing:1px;padding:10px 0 6px;margin-top:6px}
+  .relform{border:1px solid var(--amber);border-radius:8px;padding:10px;margin-top:8px;background:var(--amberbg)}
+  .tags{display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+  .tag{font-size:10px;letter-spacing:1px;padding:1px 5px;border-radius:3px;border:1px solid;font-weight:700}
+  .tag.rank{color:var(--blue);border-color:rgba(90,176,255,.35)}
+  .tag.q{color:var(--dim);border-color:rgba(143,160,175,.35)}
+  .tag.vis{color:var(--amber);border-color:rgba(255,178,36,.4)}
+  .truck{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .truck.offline{opacity:.72;border-color:var(--faint)}
+  .offbtn{margin-left:auto;background:transparent;border:1px solid var(--faint);color:var(--dim);border-radius:6px;padding:4px 9px;font-size:11px;font-weight:800;letter-spacing:1px}
+  .offbtn.on{border-color:var(--red);color:var(--red)}
+  .offlinebanner{background:var(--redbg);color:var(--red);font-weight:800;letter-spacing:2px;font-size:12px;text-align:center;padding:6px}
+  .seat.dim{opacity:.5}
+  .hbrow{padding:9px 10px;border-bottom:1px solid var(--line);font-size:14px}
+  .msgbox{width:100%;min-height:260px;background:#0d1116;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;white-space:pre;resize:vertical}
+  .truck .hd{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .platebadge{background:var(--plate);color:#fff;font-weight:900;letter-spacing:2px;font-size:13px;padding:4px 10px;border-radius:4px}
+  .platebadge.grey{background:#3a4550}
+  .sub{font-size:11px;color:var(--faint);letter-spacing:2px;text-transform:uppercase}
+  .seats{display:grid;gap:8px;padding:10px}
+  .seat{width:100%;text-align:left;border-radius:8px;padding:10px 12px;color:var(--text);min-height:56px;background:transparent;border:1px solid var(--line);border-left:5px solid var(--line)}
+  .seat.valid{border-color:rgba(67,207,140,.65);border-left-color:var(--green)}
+  .seat.invalid{background:var(--redbg);border-color:rgba(255,77,66,.65);border-left-color:var(--red)}
+  .seat.empty{background:var(--panelhi)}
+  .seat.sel{outline:2px solid var(--amber)}
+  .seat .slabel{font-size:10px;letter-spacing:2px;color:var(--faint);font-weight:800;text-transform:uppercase}
+  .seat .occ{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:3px}
+  .seat .occ .nm{font-size:17px;font-weight:800}
+  .seat .meta{display:flex;align-items:center;gap:6px}
+  .seat .time{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .seat .why{margin-top:4px;font-size:12px;color:var(--red);font-weight:600}
+  .seat .forced{margin-top:4px;font-size:12px;color:var(--amber);font-weight:600}
+  .seat .invite{margin-top:3px;font-size:14px;color:var(--faint);font-weight:600}
+  .seat .invite.hot{color:var(--amber)}
+  .vrcard{background:var(--panel);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .qrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;font-size:14px}
+  .qrow.first{background:var(--panelhi);border:1px solid rgba(90,176,255,.35)}
+  .qrow .idx{color:var(--faint);font-variant-numeric:tabular-nums;margin-right:8px}
+  .qrow .where{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .issue{border:1px solid rgba(255,77,66,.35);background:var(--redbg);border-radius:8px;padding:8px 10px;margin-bottom:10px}
+  .sug{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px}
+  .sughd{font-size:12px;font-weight:800;letter-spacing:1px;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+  .sugbtn{border-color:var(--faint);color:var(--text)}
+  .sugbtn.best{border-color:var(--green);color:var(--green)}
+  .issue .it{color:var(--red);font-weight:800;font-size:14px}
+  .issue .opts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .obtn{background:transparent;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:800;border:1px solid}
+  .obtn.hold{border-color:var(--amber);color:var(--amber)}
+  .obtn.rel{border-color:var(--blue);color:var(--blue)}
+  .ctl{background:transparent;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:800;border:1px solid var(--dim);color:var(--dim)}
+  .ctl.warn{border-color:var(--amber);color:var(--amber)}
+  .ctl.danger{border-color:var(--red);color:var(--red)}
+  .note{font-size:11px;color:var(--faint);margin-top:10px;line-height:1.5}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#0d1116;border-top:2px solid var(--line);padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;z-index:50}
+  .bar.danger{border-top-color:var(--red)}
+  .bar .issues div{font-size:12px;color:var(--red);font-weight:600;margin-top:2px}
+  details{margin-top:10px}
+  summary{font-size:12px;font-weight:800;letter-spacing:1px;color:var(--dim);cursor:pointer;padding:6px 0}
+  .rmember{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--panelhi)}
+  .rtop{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .rname{font-size:15px;font-weight:800}
+  .rrank{font-size:11px;color:var(--dim)}
+  select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;font-weight:700}
+  .togs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .noteinput{margin-top:8px;width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:12px;font-family:inherit}
+  .noteinput::placeholder{color:var(--faint)}
+  .tally{margin-top:8px;font-size:11px;font-weight:700;letter-spacing:1px;color:var(--blue);font-variant-numeric:tabular-nums}
+  .tog{border-radius:6px;padding:5px 9px;font-size:11px;font-weight:800;letter-spacing:1px;border:1px solid var(--faint);color:var(--faint);background:transparent}
+  .tog.on{border-color:var(--green);color:var(--green);background:var(--greenbg)}
+  .shifthdr{font-size:12px;font-weight:900;letter-spacing:3px;color:var(--dim);margin:14px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .hidden{display:none}
+  .empty-note{color:var(--faint);font-size:13px}
+  .sbsub{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--faint)}
+  .qlog{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .qlog label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--dim)}
+  .qlog select,.qlog input{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px 9px;font-size:13px;font-family:inherit;font-weight:600;min-width:150px}
+  .segbtns{display:flex;gap:6px;flex-wrap:wrap}
+  .staffrow{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--panelhi);border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin-bottom:6px;color:var(--text);font-size:14px;font-weight:600}
+  .staffrow.on{border-color:var(--amber);background:var(--amberbg)}
+  .sbbadge{font-size:11px;font-weight:800;padding:1px 6px;border-radius:4px;margin-left:4px;border:1px solid}
+  .sbbadge.pos{color:var(--green);border-color:rgba(67,207,140,.4)}
+  .sbbadge.neg{color:var(--red);border-color:rgba(255,77,66,.4)}
+  .sbrel{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);font-size:14px}
+  .sbrel>span:first-child{flex:1}
+  .sbcount{font-size:18px;font-weight:900;font-variant-numeric:tabular-nums;min-width:26px;text-align:center}
+  .sbcount.pos{color:var(--green)} .sbcount.neg{color:var(--red)}
+  .grouplbl.pos{color:var(--green)} .grouplbl.neg{color:var(--red)}
+  .ledgerrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 10px;border-bottom:1px solid var(--line);font-size:14px}
+  .rehbanner{background:repeating-linear-gradient(45deg,var(--amberbg),var(--amberbg) 12px,#3a2408 12px,#3a2408 24px);border-top:2px solid var(--amber);border-bottom:2px solid var(--amber);color:var(--amber);font-weight:900;letter-spacing:2px;font-size:12px;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .rehbanner button{background:var(--amber);color:#12161b;border:none;border-radius:6px;padding:6px 14px;font-weight:900;font-family:inherit;cursor:pointer;letter-spacing:1px;font-size:12px}
+  @media print{ .rehbanner{display:none} }
+  .relnotewrap{padding:0 16px;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+  .relnote{background:linear-gradient(90deg,#0d1f14,#0e1a13);border-left:4px solid var(--green);border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:6px;padding:10px 12px;color:var(--text);animation:relslide .35s ease-out}
+  @keyframes relslide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  .relnote .rhd{display:flex;justify-content:space-between;align-items:center;gap:12px;font-weight:900;letter-spacing:1px;font-size:12px;color:var(--green);text-transform:uppercase}
+  .relnote .rbd{margin-top:4px;font-size:13px;color:var(--dim)}
+  .relnote .rskip{margin-top:6px;font-size:12px;color:var(--amber);border-top:1px dashed var(--line);padding-top:6px}
+  .relnote .rskip b{color:var(--amber);letter-spacing:1px;font-size:11px}
+  .relnote .rx{background:none;border:1px solid var(--line);color:var(--dim);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700}
+  @media print{ .relnotewrap{display:none} }
+  @media print{
+    body{background:#fff;color:#000;padding:0}
+    nav,#ticker,#actionbar,.col-signon,.ctl,.offbtn,.obtn,.tog,.grouptoggle,.jumpbtn,.searchbox,.note,.vrcard button,.shiftsel{display:none!important}
+    header{border-bottom:2px solid #000}
+    .eyebrow,h1,.dutynow,.clock{color:#000}
+    .chip,.chip .lbl,.chip .val,.chip .of{color:#000!important;background:#fff!important;border-color:#000!important}
+    main{display:block;padding:8px}
+    .col{display:block}
+    .panel,.truck{background:#fff;border:1px solid #000;color:#000;break-inside:avoid;margin-bottom:8px}
+    .panel>.hd,.truck>.hd{color:#000;border-color:#000}
+    .platebadge{background:#fff;color:#000;border:1px solid #000}
+    .seat{background:#fff;border:1px solid #666;color:#000}
+    .seat .slabel,.seat .nm,.seat .meta,.seat .time,.seat .why,.qrow,.where,.idx,.hbrow,.sbsub,.issue .it,.empty-note{color:#000!important}
+    .tag{border-color:#666;color:#000}
+    .offlinebanner{background:#fff;color:#000;border:1px dashed #000}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="eyebrow">DFES · CAREER FIRE &amp; RESCUE</div>
+    <h1>PERTH STATION · E-DUTY BOARD <span class="shiftsel" id="shiftsel"></span></h1>
+    <div class="dutynow" id="dutynow"></div>
+  </div>
+  <div class="strip" id="strip"></div>
+  <div class="relnotewrap" id="relnotes"></div>
+</header>
+
+<div id="rehbanner"></div>
+<div id="ticker" class="t-info">Loading board…</div>
+
+<nav>
+  <button id="tab-board" class="active" onclick="setTab('board')">DUTY BOARD</button>
+  <button id="tab-forecast" onclick="setTab('forecast')">FORECAST</button>
+  <button id="tab-roster" onclick="setTab('roster')">ROSTER &amp; TAGS</button>
+  <button id="tab-standby" onclick="setTab('standby')">STANDBYS</button>
+</nav>
+
+<main id="view-board"></main>
+<main id="view-forecast" class="hidden"></main>
+<main id="view-roster" class="hidden"></main>
+<main id="view-standby" class="hidden"></main>
+
+<div id="actionbar"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   Perth Station E-Duty Board — standalone, offline, no backend.
+   Saves to this device's browser storage only.
+   Concept demonstrator, not an operational system.
+   ============================================================ */
+const STORE_KEY = "perth-eduty-v9";
+const REQ_SO = 2; // "SNAPs" = the Station Officers on shift
+const SHIFTS = ["A","B","C","D"];
+// ---- Shift rotation (8-day cycle). Anchored to 12 Jul 2026 = cycle day 0. ----
+// Day shift 08:00-18:00, night shift 18:00-08:00. Verified against the known roster.
+const DAY_CREW   = ["A","A","D","D","C","C","B","B"];
+const NIGHT_CREW = ["B","B","A","A","D","D","C","C"];
+function cyclePos(d){
+  const ref=new Date(2026,6,12);
+  const day0=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  const diff=Math.round((day0-ref)/86400000);
+  return ((diff%8)+8)%8;
+}
+// Rehearsal virtual clock (declared early so currentDuty/nowDate can use it).
+let rehearsal = null; // set fully in enterRehearsal(); { snap, snapUndo, virtualMs, offsetMs }
+const nowMs = () => Date.now() + (rehearsal ? rehearsal.offsetMs : 0);
+const nowDate = () => new Date(nowMs());
+function currentDuty(now){
+  now = now || nowDate();
+  const h = now.getHours() + now.getMinutes()/60;
+  // Show the shift that is on now, OR the shift that starts within the next two hours
+  // (06:00–08:00 opens the incoming day crew; 16:00–18:00 opens the incoming night crew).
+  // People come in early to relieve and settle before shift, so the board follows them.
+  if(h>=6 && h<8){
+    // between 06:00 and 08:00, day crew of TODAY is incoming
+    return { shift:DAY_CREW[cyclePos(now)], phase:"Day (incoming)", ref:now };
+  }
+  if(h>=8 && h<16){
+    return { shift:DAY_CREW[cyclePos(now)],   phase:"Day",   ref:now };
+  }
+  if(h>=16 && h<18){
+    return { shift:NIGHT_CREW[cyclePos(now)], phase:"Night (incoming)", ref:now };
+  }
+  if(h>=18){
+    return { shift:NIGHT_CREW[cyclePos(now)], phase:"Night", ref:now };
+  }
+  // before 06:00 — still last night's crew on
+  const y=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
+  return { shift:NIGHT_CREW[cyclePos(y)], phase:"Night", ref:y };
+}
+// The shift that just came OFF duty (whose stragglers on the board are holdbacks).
+function prevDuty(now){
+  now = now || nowDate();
+  const h = now.getHours() + now.getMinutes()/60;
+  // Before the incoming crew has officially taken over (h<8 during day lead-in, or 16..18
+  // during night lead-in), "prev" = the crew still on the board handing over.
+  if(h>=6 && h<8){ const y=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1); return NIGHT_CREW[cyclePos(y)]; }
+  if(h>=8 && h<16){ const y=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1); return NIGHT_CREW[cyclePos(y)]; }
+  if(h>=16 && h<18) return DAY_CREW[cyclePos(now)];
+  if(h>=18) return DAY_CREW[cyclePos(now)];
+  const y=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
+  return DAY_CREW[cyclePos(y)];
+}
+// Minutes into the duty period was tried and dropped for classification: a callback can be
+// called at 08:10 and walk in at 08:40, so arrival time can't separate callback from standby.
+// Board state at sign-on is used instead (see otMark in signOn).
+const STATUSES = ["Available","Acting up","Academy","Detached duties","USAR deployment","Annual leave","LSL","Sick","Workers comp","Relieving out","Other leave"];
+
+const TRUCKS = [
+  { id:"p1", name:"PERTH 1ST", sub:"Pump", seats:[
+    { id:"p1-so",  label:"Station Officer", role:"SO"  },
+    { id:"p1-drv", label:"Pump Driver",     role:"DRV" },
+    { id:"p1-ff1", label:"Firefighter 1",   role:"FF1" },
+    { id:"p1-ff2", label:"Firefighter 2",   role:"FF2" }]},
+  { id:"p2", name:"PERTH 2ND", sub:"Pump", seats:[
+    { id:"p2-so",  label:"Station Officer", role:"SO"  },
+    { id:"p2-drv", label:"Pump Driver",     role:"DRV" },
+    { id:"p2-ff1", label:"Firefighter 1",   role:"FF1" },
+    { id:"p2-ff2", label:"Firefighter 2",   role:"FF2" }]},
+  { id:"clp", name:"CLP", sub:"Aerial", seats:[
+    { id:"clp-1", label:"CLP Operator 1", role:"CLP" },
+    { id:"clp-2", label:"CLP Operator 2", role:"CLP" }]},
+];
+const ALL_SEATS = TRUCKS.flatMap(t => t.seats.map(s => ({...s, truckId:t.id, truckName:t.name})));
+const seatById = id => ALL_SEATS.find(s => s.id === id);
+const SEAT_PRIORITY = { CLP:0, SO:1, DRV:2, FF1:3, FF2:4 };
+
+/* ---- Roster seed, all four shifts.
+     TOPO (Perth topography driver) has no formal qual and lives on the physical board,
+     so everyone starts TOPO-off: toggle the actual drivers on in the Roster tab.
+     STRIPE = 1st or 2nd Class (confirmed). SNAPs = Station Officers, tracked by rank, not a tag.
+   Statuses seeded roughly from the sheets; adjust freely. No employee numbers stored by design. */
+function M(id,name,rank,cls,shift,quals,opts={}){
+  return Object.assign({
+    id,name,rank,cls,shift,quals,
+    topo:false,
+    stripe: cls==="1st Class"||cls==="2nd Class",
+    clp: quals.includes("CLP"),
+    vr:  quals.includes("VR"),
+    csr: quals.includes("CSR"), // road crash rescue — counts toward the VR substitute rule
+    rrs: quals.includes("RRS"), // road rescue — also counts toward the VR substitute rule
+    reliever:false, // designated home reliever: fills the relievers pool, can be sent out; core/temp-transfer/SOs cannot
+    note:"",
+    avail:"Available",
+    seatId:null, signOn:null, status:"off", forced:false, ot:"", excHours:false,
+    lastOT:null,             // ms timestamp of most recent Holdback/Callback/Super holdback — bottom of callback order
+    lastOTPrev:null,         // snapshot so unflagging OT restores the previous fairness position
+    superHBReleased:[]       // ["YYYY-MM-DD:Day"|"YYYY-MM-DD:Night"] — shifts they're released from due to a super holdback
+  }, opts);
+}
+const SEED = [
+  // ---------- B SHIFT ----------
+  M(2,"Hall, K.","SO","","B",["2.4 UT","CSR","HR","ICV","POD","RRS","SET","VR"]),
+  M(3,"Rogers, S.","SO","","B",["CSR","HR","RRS","VR"],{avail:"Workers comp"}),
+  M(4,"Roberts, P.","SO","","B",["3.4 UT-D","CSR","HR","RRS","VR"]),
+  M(5,"Hosking, B.","SO","","B",["HR","RRS","SET","USAR","VR"],{avail:"Annual leave"}),
+  M(6,"Badaraco, F.","SFF","","B",["CLP","CSR","HR","RRS","VR"],{topo:true}),
+  M(7,"Nightingale, B.","SFF","","B",["CLP","CSR","HR","ICV","RRS","VR"],{topo:true,avail:"Annual leave"}),
+  M(8,"Stockley-Smith, H.","FF","2nd Class","B",["3.4 UT","3.4 UT-D","CSR","HR","RRS","VR"]),
+  M(9,"Casella, B.","SFF","","B",["2.4 UT","CLP","CSR","HR","RRS","SET","VR"],{topo:true}),
+  M(10,"Flack, J.","SFF","","B",["CLP","CSR","HR","RRS","VR"],{topo:true}),
+  M(11,"Brosens, S.","SFF","","B",["CLP","CSR","HR","RRS","VR"],{topo:true}),
+  M(12,"Murray, B.","SFF","","B",["3.4 UT","CLP","CSR","HR","RRS","VR"],{topo:true,avail:"Annual leave"}),
+  M(13,"Deering, M.","SFF","","B",["CLP","CSR","HR","ICV","RRS","VR"],{topo:true,avail:"Sick"}),
+  M(14,"Howell, J.","SFF","","B",["3.4 UT","CSR","HR","RRS","VR"],{topo:true,avail:"LSL"}),
+  M(15,"Newman, T.","SFF","","B",["3.4 UT","CSR","HR","RRS","VR"],{topo:true,avail:"LSL"}),
+  M(16,"Lowther, M.","FF","3rd Class","B",["HR","SET"]),
+  M(17,"Mackean, J.","FF","4th Class","B",["CSR","HR"],{topo:true}),
+  M(18,"Pietersen, C.","FF","4th Class","B",["CSR","HR"],{topo:true}),
+  M(19,"Elphick, J.","FF","5th Class","B",["HR"],{avail:"Relieving out",note:"RELIEVER"}),
+  M(20,"Taylor, K.","FF","5th Class","B",["HR"],{avail:"Relieving out",note:"RELIEVER"}),
+  M(21,"McLachlan, A.","FF","5th Class","B",["HR"],{avail:"Relieving out",note:"RELIEVER"}),
+  // ---------- C SHIFT ----------
+  M(22,"Richardson, J.","SO","","C",["2.4 UT","3.4 UT","3.4 UT-D","CSR","HR","POD","RRS","USAR","VR"],{avail:"Annual leave"}),
+  M(23,"Barnard, D.","SO","","C",["CLP","CSR","HR","RRS","SET","VR"]),
+  M(24,"Bailey, M.","SO","","C",["3.4 HZ","3.4 UT","CSR","HR"],{avail:"Annual leave"}),
+  M(25,"Lindsay, C.","SFF","","C",["CSR","HR","RRS","VR"],{topo:true}),
+  M(26,"Hyde, G.","SFF","","C",["2.4 UT","3.4 UT","3.4 UT-D","CLP","CSR","HR","POD","RRS","USAR","VR"],{topo:true}),
+  M(27,"King, S.","SFF","","C",["2.4 UT","CLP","CSR","HR","RRS","VR"],{topo:true,avail:"Annual leave"}),
+  M(28,"Caddy, J.","SFF","","C",["2.4 UT","3.4 UT","3.4 UT-D","CLP","CSR","HR","RRS","USAR","VR"],{avail:"Relieving out"}),
+  M(29,"Welsh, C.","SFF","","C",["2.4 UT","3.4 UT","3.4 UT-D","CSR","HR","ICV","RRS","VR"],{avail:"Annual leave"}),
+  M(30,"Bonomi, A.","SFF","","C",["CLP","CSR","HR","ICV","RRS","VR"],{topo:true,avail:"Annual leave"}),
+  M(31,"Choate, S.","SFF","","C",["2.4 UT","3.4 HZ","3.4 UT","CLP","CSR","HR","POD","RRS","VR"],{topo:true,avail:"LSL"}),
+  M(32,"Walton, J.","SFF","","C",["CSR","HR","RRS","VR"]),
+  M(33,"Hogan, K.","SFF","","C",["CSR","HR","RRS","VR"],{topo:true,note:"Temp transfer · home B"}),
+  M(34,"Denton, A.","FF","1st Class","C",["CSR","HR","RRS","VR"],{topo:true}),
+  M(35,"Redfern, K.","FF","2nd Class","C",["3.4 UT","CSR","HR"],{avail:"Other leave"}),
+  M(36,"O'Brien, A.","FF","2nd Class","C",["3.4 UT","3.4 UT-D","CSR","HR","RRS","VR"],{topo:true}),
+  M(37,"McNicholas, L.","FF","2nd Class","C",["3.4 UT","3.4 UT-D","CSR","HR","RRS","VR"]),
+  M(38,"Sanders, B.","FF","3rd Class","C",["CSR","HR"],{avail:"Relieving out"}),
+  M(39,"Derbyshire, S.","FF","4th Class","C",["CSR","HR"]),
+  M(40,"Wightman, P.","FF","4th Class","C",["HR"]),
+  M(41,"Kirkwood, A.","FF","5th Class","C",["HR"],{avail:"Annual leave"}),
+  M(42,"Bovell, T.","FF","5th Class","C",["HR"],{avail:"Relieving out"}),
+  M(43,"Stocker, J.","FF","5th Class","C",["HR"],{avail:"Relieving out"}),
+  // ---------- A SHIFT ----------
+  M(44,"Renton, R.","SO","","A",["CLP","CSR","HR","RRS","SET","USAR","VR"]),
+  M(45,"Martin, D.","SO","","A",["CSR","HR","RRS","VR"]),
+  M(46,"Oakley, J.","SO","","A",["3.4 UT","CLP","CSR","HR","RRS","VR"]),
+  M(47,"Reay, D.","SO","","A",["3.4 UT","CLP","CSR","HR","RRS","USAR","VR"],{avail:"Annual leave"}),
+  M(48,"Litterick, A.","SO","","A",["3.4 UT","HR"],{avail:"Relieving out",note:"ACTING"}),
+  M(49,"Parks, M.","SFF","","A",["2.4 UT","CLP","CSR","HR","ICV","RRS","SET","VR"],{topo:true,avail:"Annual leave"}),
+  M(50,"Gallaher, B.","SFF","","A",["3.4 UT","3.4 UT-D","CLP","CSR","HR","ICV","POD","RRS","VR"],{topo:true}),
+  M(51,"Mercieca, P.","SFF","","A",["2.4 UT","3.4 UT","3.4 UT-D","CLP","CSR","HR","RRS","SET","VR"],{topo:true}),
+  M(53,"Bowman, K.","SFF","","A",["CLP","CSR","HR","RRS","USAR","VR"],{topo:true}),
+  M(54,"Galonski, A.","SFF","","A",["CLP","CSR","HR","RRS","VR"],{topo:true,avail:"Other leave"}),
+  M(55,"Littlefair, S.","SFF","","A",["CSR","HR","RRS","SET","VR"],{topo:true,avail:"Relieving out",note:"ACTING"}),
+  M(56,"Rayner, T.","SFF","","A",["3.4 UT","CLP","CSR","HR","RRS","VR"],{topo:true}),
+  M(57,"Adley, M.","FF","4th Class","A",["3.4 UT","CSR","HR"],{topo:true}),
+  M(58,"de Vries, S.","FF","4th Class","A",["HR"]),
+  M(59,"Cornu, L.","FF","5th Class","A",["HR"]),
+  M(60,"Neenan, R.","FF","5th Class","A",["HR"]),
+  M(61,"Main, S.","FF","5th Class","A",["HR"],{avail:"Relieving out"}),
+  M(62,"Corthorne, S.","FF","5th Class","A",["HR"],{avail:"Relieving out"}),
+  M(63,"Manera, T.","FF","5th Class","A",["HR"],{avail:"Relieving out"}),
+  // ---------- D SHIFT ----------
+  M(64,"Wilcock, N.","SO","","D",["3.4 UT","CLP","HR","ICV","SET","USAR"],{avail:"Annual leave"}),
+  M(65,"Humble, D.","SO","","D",["CLP","CSR","HR","RRS","VR"]),
+  M(66,"Wilson, J.","SO","","D",["CSR","HR","ICV","RRS","VR"],{avail:"Annual leave"}),
+  M(67,"Lasscock, C.","SO","","D",["2.4 UT","HR","SET"],{note:"FROM S012"}),
+  M(68,"Milne, K.","SO","","D",["2.4 UT","3.4 UT","3.4 UT-D","CSR","HR","SET"],{avail:"Relieving out",note:"ACTING"}),
+  M(69,"Lightbody, A.","SFF","","D",["CLP","CSR","HR","RRS","VR"],{topo:true}),
+  M(70,"Clemesha, G.","SFF","","D",["2.4 UT","CLP","CSR","HR","RRS","VR"],{topo:true}),
+  M(71,"Mason, P.","SFF","","D",["CLP","CSR","HR","RRS","VR"],{topo:true}),
+  M(72,"Brown, W.","SFF","","D",["CLP","CSR","HR","VR"],{topo:true}),
+  M(73,"Piromanski, A.","SFF","","D",["CLP","HR","RRS","VR"],{topo:true,avail:"Other leave"}),
+  M(74,"Manera, A.","SFF","","D",["CLP","CSR","HR","RRS","VR"],{topo:true,avail:"LSL"}),
+  M(75,"Kitson, M.","SFF","","D",["CSR","HR","RRS","VR"],{topo:true}),
+  M(76,"Knapp, J.","FF","1st Class","D",["HR","RRS","VR"],{topo:true,avail:"Annual leave"}),
+  M(77,"Gibson, L.","FF","1st Class","D",["3.4 HZ","HR","RRS","VR"],{topo:true,avail:"Other leave"}),
+  M(78,"Cranley, K.","FF","1st Class","D",["CSR","HR","RRS","VR"],{topo:true}),
+  M(79,"Schonell, J.","FF","4th Class","D",["CSR","HR"],{topo:true}),
+  M(80,"Burrell, T.","FF","5th Class","D",["HR"],{avail:"Relieving out"}),
+  M(81,"Mcallister, H.","FF","5th Class","D",["HR"],{avail:"Relieving out"}),
+  M(82,"Batterham, J.","FF","5th Class","D",["HR"],{avail:"Relieving out"}),
+];
+
+// Topo drivers (from the current shift boards). Topo has no formal qual; this mirrors the board.
+// "dack" on B shift did not match any name in the roster, so it is not seeded — check the spelling.
+const TOPO_IDS = new Set([
+  // B: Pietersen, Mackean, Badaraco, Casella, Brosens, Deering, Howell, Flack, Murray, Newman, Nightingale
+  6,7,9,10,11,12,13,14,15,17,18,
+  // C: Bonomi, O'Brien, Denton, Hogan, King, Hyde, Lindsay, Choate
+  25,26,27,30,31,33,34,36,
+  // A: Galonski, Parks, Littlefair, Adley, Gallaher, Mercieca, Rayner, Bowman
+  49,50,51,53,54,55,56,57,
+  // D: Gibson, Schonell, Manera, Piromanski, Cranley, Mason, Brown (Wacey), Knapp, Kitson, Clemesha, Lightbody
+  69,70,71,72,73,74,75,76,77,78,79,
+]);
+SEED.forEach(m=>{ if(TOPO_IDS.has(m.id)) m.topo=true; });
+// Designated home relievers: noted RELIEVER on the day sheets, plus the 5th Class members
+// shown relieving out (the shift's junior reliever cohort). Assumption — toggle RELIEVER
+// per member in the Roster tab to correct. Core, temp transfers and SOs stay unflagged.
+SEED.forEach(m=>{
+  if(m.note==="RELIEVER" || (m.cls==="5th Class" && m.avail==="Relieving out")){
+    m.reliever=true;
+    if(m.note==="RELIEVER") m.note="";
+  }
+});
+
+// ---- State ----
+let state = load();
+state.shift = currentDuty().shift; // open on whichever shift is actually on now
+// Single-step undo: lastCommitted always holds the state as of the previous commit, so at
+// commit time it IS the pre-mutation snapshot. Anyone signing themselves on can mis-tap.
+let lastCommitted = JSON.stringify(state);
+let undoSnap = null;
+// Rehearsal mode: a snapshot of the real state taken on entry. Sign-ons, releases, flags —
+// everything runs as normal but discards on exit. Nothing writes to localStorage. Rehearsal
+// also carries a virtual clock so the app treats "now" as (say) tonight at 18:00, letting
+// you play through the actual shift the incoming crew is being signed on to.
+// (`rehearsal`, `nowMs`, `nowDate` are declared earlier so currentDuty can use them.)
+let selectedId = null;
+let confirmBox = null;
+let tab = "board";
+let signQuery = "";
+let stayingReliever = {}; // {memberId:true} — reliever ticked "staying at Perth" at sign-on: don't send them out, be more eager to seat them
+let othersOpen = false;
+let relOpen = false;
+let relForm = null; // {name,rank,stripe,topo,clp,vr}
+let showShiftMsg = false;
+let rosterQuery = "";
+// Forecast: which shift are we looking ahead to? Null = auto (next changeover).
+// forecastTarget = { iso: "YYYY-MM-DD", phase: "Day"|"Night" } or null.
+let forecastTarget = null;
+// Session-only release notifications. Shown as full-width cards below the strip and above
+// the trucks. Each holds { id, title, body, skipNotes: [...], ts }. Auto-expire after 60s.
+// Not persisted — refresh clears them, which is deliberate (they're "what just happened",
+// not an audit log).
+let releaseNotes = [];
+const NOTE_TTL_MS = 60000;
+function pushRelease(title, body, skipNotes){
+  releaseNotes.push({ id: Date.now()+Math.floor(Math.random()*1000), title, body, skipNotes: skipNotes||[], ts: nowMs() });
+}
+function dismissRelease(id){
+  releaseNotes = releaseNotes.filter(n=>n.id!==id);
+  render();
+}
+function pruneReleases(){
+  const cutoff = nowMs() - NOTE_TTL_MS;
+  const before = releaseNotes.length;
+  releaseNotes = releaseNotes.filter(n=>n.ts >= cutoff);
+  return releaseNotes.length !== before;
+}
+let msg = {text:"Board ready. Pick the shift at the top, tap names to sign on, manage tags in the Roster tab.", tone:"info"};
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(!raw) return { members: SEED.map(m=>({...m})), relieverReqs: [], shift:"B", reqVR:6, templates:{}, setArrangement:{}, standbys:[], offline:{} };
+    const saved = JSON.parse(raw);
+    const byId = Object.fromEntries((saved.members||[]).map(m=>[m.id,m]));
+    const members = SEED.map(seed => byId[seed.id] ? {...seed, ...byId[seed.id]} : {...seed})
+      .concat((saved.members||[]).filter(m=>m.ext)); // external relievers aren't in SEED — keep them
+    return { members, relieverReqs: saved.relieverReqs||[], shift: saved.shift||"B", reqVR: saved.reqVR!=null?saved.reqVR:6, templates: saved.templates||{}, setArrangement: saved.setArrangement||{}, standbys: saved.standbys||[], offline: saved.offline||{} };
+  }catch(e){
+    return { members: SEED.map(m=>({...m})), relieverReqs: [], shift:"B", reqVR:6, templates:{}, setArrangement:{}, standbys:[], offline:{} };
+  }
+}
+function save(){
+  if(rehearsal) return; // rehearsal changes never touch localStorage
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+  catch(e){ say("Could not save to this device's browser storage.", "bad"); }
+}
+function enterRehearsal(targetMs){
+  if(rehearsal) return;
+  // Aim rehearsal at the incoming window that makes sense now: 06:00 (2h before day) or
+  // 16:00 (2h before night). If already past 16:00, aim at 06:00 tomorrow. Caller can
+  // override with an explicit ms.
+  if(targetMs==null){
+    const now = new Date();
+    const h = now.getHours();
+    const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    if(h < 6)          t.setHours(6);  // aim at 06:00 today (day crew coming in)
+    else if(h < 16)    t.setHours(16); // aim at 16:00 today (night crew coming in)
+    else             { t.setDate(t.getDate()+1); t.setHours(6); } // aim at 06:00 tomorrow
+    targetMs = t.getTime();
+  }
+  rehearsal = {
+    snap: JSON.stringify(state),
+    snapUndo: undoSnap,
+    virtualMs: targetMs,
+    offsetMs: targetMs - Date.now()
+  };
+  state.shift = currentDuty().shift; // follow the incoming/on-duty shift for the virtual time
+  const label = new Date(targetMs).toLocaleString([], {weekday:"short",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:false});
+  selectedId=null; confirmBox=null;
+  say("Rehearsal ON \u2014 clock set to "+label+". Play through the changeover; nothing saves.","warn");
+  render();
+}
+function setRehearsalTime(hhmm){
+  if(!rehearsal) return;
+  const parts=(hhmm||"").split(":"); const h=parseInt(parts[0],10), mi=parseInt(parts[1],10);
+  if(isNaN(h)||isNaN(mi)) return;
+  const base=new Date(rehearsal.virtualMs);
+  base.setHours(h,mi,0,0);
+  rehearsal.virtualMs = base.getTime();
+  rehearsal.offsetMs = base.getTime() - Date.now();
+  state.shift = currentDuty().shift;
+  say("Rehearsal clock set to "+fmt(base.getTime())+".","info");
+  render();
+}
+function exitRehearsal(){
+  if(!rehearsal) return;
+  state = JSON.parse(rehearsal.snap);
+  undoSnap = rehearsal.snapUndo;
+  lastCommitted = JSON.stringify(state);
+  rehearsal = null;
+  selectedId=null; confirmBox=null;
+  say("Rehearsal ended. Real board restored.","info");
+  save(); render();
+}
+
+// ---- Rule engine ----
+// Quals that don't affect Perth crewing (3.4/2.4 variants, SET, ICV, POD, USAR — USAR turns
+// out as a specialist crew and is a leave reason, not a station crewing qual). Hidden from
+// the roster line to cut clutter; toggle-governed quals (CLP/CSR/RRS/VR) show as toggles.
+const IRRELEVANT_QUALS = ["2.4","3.4","SET","ICV","POD","USAR"];
+const TOGGLE_QUALS = ["CLP","CSR","RRS","VR"];
+const displayQuals = m => (m.quals||[]).filter(q =>
+  !IRRELEVANT_QUALS.some(p=>q.startsWith(p)) && !TOGGLE_QUALS.includes(q));
+const isJunior = m => m.rank==="FF" && !m.stripe;
+const seniorOrStripe = m => m.rank==="SFF" || m.stripe;
+const countsVR = m => m.vr;
+const isOfficer = m => m.rank==="SO" || m.rank==="DO";
+
+function seatEligibility(seat, m){
+  switch(seat.role){
+    case "SO":  return m.rank==="SO" ? {ok:true} : {ok:false, reason:"Requires Station Officer rank"};
+    case "DRV": return isOfficer(m) ? {ok:false, reason:"Officers do not crew firefighter seats"} : (m.topo ? {ok:true} : {ok:false, reason:"Requires topo (Perth topography driver)"});
+    case "CLP": return (m.rank==="SFF" && m.clp) ? {ok:true} : {ok:false, reason:"Requires Senior Firefighter with CLP"};
+    case "FF1": case "FF2":
+      return isOfficer(m) ? {ok:false, reason:"Officers do not crew firefighter seats"} : {ok:true};
+    default: return {ok:true};
+  }
+}
+function occupancy(members){
+  const o={}; members.forEach(m=>{ if(m.status==="on"&&m.seatId) o[m.seatId]=m; }); return o;
+}
+const truckOffline = tid => !!(state.offline && state.offline[tid]);
+const activeSeats = () => ALL_SEATS.filter(s=>!truckOffline(s.truckId));
+function pairIssue(truckId, occ){
+  if(truckOffline(truckId)) return null;
+  const ff1=occ[truckId+"-ff1"], ff2=occ[truckId+"-ff2"];
+  if(ff2 && isJunior(ff2) && ff1 && !seniorOrStripe(ff1))
+    return "FF1 must be a One-Striper or Senior when FF2 is a Junior";
+  // Minimum one Senior Firefighter (rank SFF) per pump, in any firefighter seat — driving
+  // counts, a stripe does not, the SO does not. ASSUMPTION pending clarification: seat
+  // position doesn't matter (senior may drive with a one-striper in FF1). If the rule
+  // firms up to "senior must be FF1", tighten here.
+  const drv=occ[truckId+"-drv"];
+  const ffSeats=[drv,ff1,ff2].filter(Boolean);
+  if(ffSeats.length===3 && !ffSeats.some(m=>m.rank==="SFF"))
+    return "Pump needs at least one Senior Firefighter aboard (any FF seat)";
+  return null;
+}
+const hasCsrRrs = m => m.csr || m.rrs;
+// VR minimum turnout (updated rule): 1 Station Officer holding VR, plus at least 3
+// firefighters holding VR, plus a 4th firefighter slot filled by either another VR holder
+// or ONE CSR cat-2 / RRS holder (the substitute path). Never fewer than 3 actual VR
+// firefighters regardless of substitutes. Total minimum: 5 people.
+// A VR-qualified member seated on the CLP does NOT count toward VR — they'll rotate back
+// onto a pump later, but for the shift's VR turnout they're on the aerial appliance.
+const isOnCLP = m => m.seatId==="clp-1" || m.seatId==="clp-2";
+const VR_FF_MIN = 3;      // hard floor of actual VR firefighters
+const VR_FF_SLOTS = 4;    // firefighter slots to fill (4th may be the CSR/RRS sub)
+const VR_TOTAL = 5;       // display denominator: 4 FF slots + 1 SO with VR
+function vrBreakdown(list){
+  const vrFF   = list.filter(m=>!isOfficer(m) && m.vr && !isOnCLP(m)).length;
+  const soVR   = list.some(m=>m.rank==="SO" && m.vr && !isOnCLP(m));
+  const subs   = list.filter(m=>!isOfficer(m) && !m.vr && hasCsrRrs(m) && !isOnCLP(m)).length;
+  const subUsed = vrFF < VR_FF_SLOTS && subs > 0;
+  const ffEffective = Math.min(VR_FF_SLOTS, vrFF + (subUsed ? 1 : 0));
+  const met = soVR && vrFF >= VR_FF_MIN && ffEffective >= VR_FF_SLOTS;
+  // `effective` counts the crew toward the 5-person minimum for display: FF side + the SO.
+  const effective = ffEffective + (soVR ? 1 : 0);
+  return { vrFF, soVR, subs, subUsed, ffEffective, effective, met };
+}
+function vrStatus(members){
+  const seated = members.filter(m=>m.status==="on"&&m.seatId);
+  const b = vrBreakdown(seated);
+  return { count:b.vrFF, effective:b.effective, soVR:b.soVR, subUsed:b.subUsed, met:b.met, vrFF:b.vrFF };
+}
+function crewVROk(crew){
+  return vrBreakdown(crew).met;
+}
+function shiftCounts(members){
+  const seated=members.filter(m=>m.status==="on"&&m.seatId);
+  return { vr:seated.filter(countsVR).length, so:seated.filter(m=>m.rank==="SO").length };
+}
+function boardIssues(members){
+  const occ=occupancy(members), out=[];
+  activeSeats().forEach(seat=>{
+    const m=occ[seat.id];
+    if(!m) out.push({type:"seat", text:seat.truckName+": "+seat.label+" unfilled", need:seat.role});
+    else{
+      const el=seatEligibility(seat,m);
+      if(!el.ok) out.push({type:"seat", text:seat.truckName+": "+m.name+" in "+seat.label+" ("+el.reason.toLowerCase()+")", need:seat.role});
+    }
+  });
+  ["p1","p2"].forEach(tid=>{
+    const p=pairIssue(tid,occ);
+    if(p) out.push({type:"pair", text:(tid==="p1"?"PERTH 1ST: ":"PERTH 2ND: ")+p, need:"FF1"});
+  });
+  const vs=vrStatus(members);
+  if(!vs.met && (vs.vrFF < VR_FF_MIN || vs.effective < VR_TOTAL - (vs.soVR?0:1))) out.push({type:"count", text:"VR: "+vs.effective+" of "+VR_TOTAL+(vs.subUsed?" (incl. 1 CSR/RRS)":"")+(vs.vrFF<VR_FF_MIN?" — needs \u2265"+VR_FF_MIN+" VR firefighters":""), need:"VR"});
+  if(!vs.soVR && vs.vrFF>=VR_FF_MIN) out.push({type:"count", text:"VR crew needs a Station Officer holding VR", need:"VR_SO"});
+  // SNAPs (2 SOs) are covered by the two SO seats, which already flag individually when unfilled
+  return out;
+}
+// Compute the ms timestamp when a member's next rostered shift begins, from a given moment.
+// Uses the DAY_CREW/NIGHT_CREW cycle. Returns null if we can't find one within nine days.
+function nextRosteredStart(member, fromMs){
+  fromMs = fromMs || nowMs();
+  const from = new Date(fromMs);
+  for(let dayOffset=0; dayOffset<9; dayOffset++){
+    const d = new Date(from.getFullYear(), from.getMonth(), from.getDate()+dayOffset);
+    const pos = cyclePos(d);
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0, 0).getTime();
+    const nightStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 18, 0, 0, 0).getTime();
+    if(DAY_CREW[pos]===member.shift && dayStart>fromMs) return dayStart;
+    if(NIGHT_CREW[pos]===member.shift && nightStart>fromMs) return nightStart;
+  }
+  return null;
+}
+// "Can this outgoing-shift member hold back into the incoming shift without running into
+// their own next rostered shift?" Exactly back-to-back is fine. If holding back overruns
+// the next rostered start, they can't be held; a callback is required instead.
+function canHoldBack(m, projectedEndMs){
+  const next = nextRosteredStart(m);
+  if(next==null) return { ok:true, until:null };
+  return { ok: projectedEndMs <= next, until: next };
+}
+// Release key for the shift a member would otherwise work next: "YYYY-MM-DD:Day|Night".
+function nextRosteredKey(member, fromMs){
+  fromMs = fromMs || nowMs();
+  const from = new Date(fromMs);
+  for(let dayOffset=0; dayOffset<9; dayOffset++){
+    const d = new Date(from.getFullYear(), from.getMonth(), from.getDate()+dayOffset);
+    const pos = cyclePos(d);
+    const iso = d.toISOString().slice(0,10);
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0, 0).getTime();
+    const nightStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 18, 0, 0, 0).getTime();
+    if(DAY_CREW[pos]===member.shift && dayStart>fromMs) return iso+":Day";
+    if(NIGHT_CREW[pos]===member.shift && nightStart>fromMs) return iso+":Night";
+  }
+  return null;
+}
+// Is this member released from the shift currently being viewed on the board?
+function releasedFromActive(m){
+  if(!m.superHBReleased || !m.superHBReleased.length) return false;
+  const now = nowDate();
+  const iso = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString().slice(0,10);
+  const todayIso = iso(now);
+  const yestIso = iso(new Date(now.getFullYear(), now.getMonth(), now.getDate()-1));
+  const tomIso  = iso(new Date(now.getFullYear(), now.getMonth(), now.getDate()+1));
+  return m.superHBReleased.some(k=>{
+    const parts = k.split(":");
+    const dISO = parts[0], phase = parts[1];
+    if(dISO!==todayIso && dISO!==yestIso && dISO!==tomIso) return false;
+    const dd = new Date(dISO+"T00:00:00");
+    const pos = cyclePos(dd);
+    const letter = phase==="Day" ? DAY_CREW[pos] : NIGHT_CREW[pos];
+    return letter === state.shift && letter === m.shift;
+  });
+}
+// Fairness tally: every OT stamp bumps to now; unflag restores the previous stamp.
+function stampOT(m){ m.lastOTPrev = m.lastOT || null; m.lastOT = nowMs(); }
+function unstampOT(m){ m.lastOT = m.lastOTPrev || null; m.lastOTPrev = null; }
+
+// Platoon (Staff Shortage) Matrix — per OPS Circular 47/2016. Given which platoon is on
+// duty and which shift-of-set it is (1st day, 2nd day, 1st night, 2nd night), returns
+// [ {platoon, action}, ... ] in priority order. "ASPSA" means: exhausted the matrix; the
+// SO calls a super holdback or takes the truck offline depending on the situation.
+const SHORTAGE_MATRIX = {
+  A: {
+    "1st day":   [{platoon:"C",action:"Hold Back"}, {platoon:"D",action:"Call Back"}, {platoon:"B",action:"Call Back"}],
+    "2nd day":   [{platoon:"D",action:"Call Back"}, {platoon:"C",action:"Call Back"}, {platoon:"ASPSA"}],
+    "1st night": [{platoon:"C",action:"Call Back"}, {platoon:"B",action:"Call Back"}, {platoon:"ASPSA"}],
+    "2nd night": [{platoon:"D",action:"Hold Back"}, {platoon:"B",action:"Call Back"}, {platoon:"C",action:"Call Back"}]
+  },
+  B: {
+    "1st day":   [{platoon:"D",action:"Hold Back"}, {platoon:"A",action:"Call Back"}, {platoon:"C",action:"Call Back"}],
+    "2nd day":   [{platoon:"A",action:"Call Back"}, {platoon:"D",action:"Call Back"}, {platoon:"ASPSA"}],
+    "1st night": [{platoon:"D",action:"Call Back"}, {platoon:"C",action:"Call Back"}, {platoon:"ASPSA"}],
+    "2nd night": [{platoon:"A",action:"Hold Back"}, {platoon:"C",action:"Call Back"}, {platoon:"D",action:"Call Back"}]
+  },
+  C: {
+    "1st day":   [{platoon:"A",action:"Hold Back"}, {platoon:"B",action:"Call Back"}, {platoon:"D",action:"Call Back"}],
+    "2nd day":   [{platoon:"B",action:"Call Back"}, {platoon:"A",action:"Call Back"}, {platoon:"ASPSA"}],
+    "1st night": [{platoon:"A",action:"Call Back"}, {platoon:"D",action:"Call Back"}, {platoon:"ASPSA"}],
+    "2nd night": [{platoon:"B",action:"Hold Back"}, {platoon:"D",action:"Call Back"}, {platoon:"A",action:"Call Back"}]
+  },
+  D: {
+    "1st day":   [{platoon:"B",action:"Hold Back"}, {platoon:"C",action:"Call Back"}, {platoon:"A",action:"Call Back"}],
+    "2nd day":   [{platoon:"C",action:"Call Back"}, {platoon:"B",action:"Call Back"}, {platoon:"ASPSA"}],
+    "1st night": [{platoon:"B",action:"Call Back"}, {platoon:"A",action:"Call Back"}, {platoon:"ASPSA"}],
+    "2nd night": [{platoon:"C",action:"Hold Back"}, {platoon:"A",action:"Call Back"}, {platoon:"B",action:"Call Back"}]
+  }
+};
+// Which shift-of-set is a given platoon working, at a given moment?
+// Each platoon has 4 consecutive cycle positions. Return "1st day" / "2nd day" /
+// "1st night" / "2nd night", or null if the platoon isn't on duty at that time.
+function shiftOfSet(platoon, now){
+  now = now || nowDate();
+  const h = now.getHours() + now.getMinutes()/60;
+  const pos = cyclePos(now);
+  // The platoon's cycle position table, ordered by set-position:
+  //   A: [(0,day),(1,day),(2,night),(3,night)]
+  //   B: [(6,day),(7,day),(0,night),(1,night)]  -- day comes before night in a set
+  //   C: [(4,day),(5,day),(6,night),(7,night)]
+  //   D: [(2,day),(3,day),(4,night),(5,night)]
+  // NOTE: for B, when we're on cycle position 0 or 1 (which is a B NIGHT), the "1st day"
+  // and "2nd day" of that set were the two previous days on positions 6 and 7 (the tail of
+  // the previous 8-day rotation). For matrix lookup we care about the current shift, so:
+  const SET = {
+    A: {0:{shift:"1st day",phase:"day"}, 1:{shift:"2nd day",phase:"day"}, 2:{shift:"1st night",phase:"night"}, 3:{shift:"2nd night",phase:"night"}},
+    B: {6:{shift:"1st day",phase:"day"}, 7:{shift:"2nd day",phase:"day"}, 0:{shift:"1st night",phase:"night"}, 1:{shift:"2nd night",phase:"night"}},
+    C: {4:{shift:"1st day",phase:"day"}, 5:{shift:"2nd day",phase:"day"}, 6:{shift:"1st night",phase:"night"}, 7:{shift:"2nd night",phase:"night"}},
+    D: {2:{shift:"1st day",phase:"day"}, 3:{shift:"2nd day",phase:"day"}, 4:{shift:"1st night",phase:"night"}, 5:{shift:"2nd night",phase:"night"}}
+  }[platoon];
+  const slot = SET[pos];
+  if(!slot) return null;
+  // Confirm the phase (day 08-18, night 18-08) matches the calendar hour, otherwise the
+  // platoon isn't currently on. Note the "incoming" windows (06-08, 16-18) are treated as
+  // if the incoming shift is on.
+  const isDayHour = h>=6 && h<16;
+  const isNightHour = h>=16 || h<6;
+  if(slot.phase==="day"   && !isDayHour) return null;
+  if(slot.phase==="night" && !isNightHour) return null;
+  return slot.shift;
+}
+// Returns the current SOP order for the ACTIVE shift viewed on the board.
+function currentShortageOrder(){
+  const on = state.shift;
+  const sos = shiftOfSet(on);
+  if(!sos) return null;
+  return { platoon:on, shiftOfSet:sos, order: SHORTAGE_MATRIX[on][sos] };
+}
+// Forecast: the ms at the start of a given ISO date + phase (Day/Night).
+function forecastShiftStartMs(iso, phase){
+  const d = new Date(iso+"T00:00:00");
+  d.setHours(phase==="Day" ? 8 : 18, 0, 0, 0);
+  return d.getTime();
+}
+// Which platoon works a given ISO+phase, from the 8-day cycle.
+function forecastPlatoon(iso, phase){
+  const d = new Date(iso+"T00:00:00");
+  const pos = cyclePos(d);
+  return phase==="Day" ? DAY_CREW[pos] : NIGHT_CREW[pos];
+}
+// Shift-of-set label for a forecast target.
+function forecastShiftOfSet(iso, phase){
+  const d = new Date(iso+"T00:00:00");
+  d.setHours(phase==="Day" ? 10 : 20, 0, 0, 0);
+  return shiftOfSet(forecastPlatoon(iso, phase), d);
+}
+// SOP order for a forecast target.
+function forecastShortageOrder(iso, phase){
+  const platoon = forecastPlatoon(iso, phase);
+  const sos = forecastShiftOfSet(iso, phase);
+  if(!sos) return null;
+  return { platoon, shiftOfSet:sos, order: SHORTAGE_MATRIX[platoon][sos] };
+}
+// The default forecast target: the next changeover after now.
+function defaultForecastTarget(){
+  const now = nowDate();
+  const h = now.getHours();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // If we're before 08:00, next changeover is today's 08:00 (day).
+  // 08:00–18:00, next is 18:00 (night). After 18:00, next is tomorrow 08:00 (day).
+  if(h < 8)  return { iso: d.toISOString().slice(0,10), phase: "Day" };
+  if(h < 18) return { iso: d.toISOString().slice(0,10), phase: "Night" };
+  d.setDate(d.getDate()+1);
+  return { iso: d.toISOString().slice(0,10), phase: "Day" };
+}
+// Is this member expected to be off (leave / relief block) at the given forecast time?
+// Returns a status string ("Annual leave", "Relieving out until 20 Jul", etc) or null.
+function forecastUnavailableReason(m, targetMs){
+  if(m.expectedOff){
+    return "Expected off · "+m.expectedOff;
+  }
+  if(m.avail && m.avail!=="Available" && m.avail!=="Relieving out"){
+    // Static leave status — assume it applies unless the member has clearer end info.
+    return m.avail;
+  }
+  if(m.avail==="Relieving out"){
+    if(!m.relievingOutUntil) return "Relieving out (indefinite)";
+    if(targetMs < m.relievingOutUntil) return "Relieving out until "+new Date(m.relievingOutUntil).toLocaleDateString([], {day:"2-digit",month:"short"});
+    return null; // back by then
+  }
+  // Super holdback release
+  if(m.superHBReleased && m.superHBReleased.length){
+    const targetD = new Date(targetMs);
+    const iso = new Date(targetD.getFullYear(), targetD.getMonth(), targetD.getDate()).toISOString().slice(0,10);
+    const phase = targetD.getHours() < 12 ? "Day" : "Night";
+    const key = iso+":"+phase;
+    if(m.superHBReleased.includes(key)) return "Released — super holdback";
+  }
+  return null;
+}
+// The forecast holdback note (short free text). Keyed per member, one at a time — a member
+// can only be "forecast to hold back" for one upcoming shift at a time. Cleared when the
+// board is cleared or when the note is manually removed.
+function setForecastHoldback(id, note){
+  const m = state.members.find(x=>x.id===id); if(!m) return;
+  if(!note) delete m.forecastHoldback;
+  else m.forecastHoldback = note;
+  commit();
+}
+// Mark a member as "expected off" for the upcoming shift — e.g. a sick call taken during
+// the current shift, or advance notice that they won't be in. Doesn't touch their real
+// roster availability. Used only by the forecast projection. Cleared explicitly or by
+// the "clear all" action when the next shift starts.
+function toggleExpectedOff(id, reason){
+  const m = state.members.find(x=>x.id===id); if(!m) return;
+  if(m.expectedOff){
+    delete m.expectedOff;
+    say(m.name+" no longer expected off for the forecast shift.","info");
+  } else {
+    m.expectedOff = reason || "Expected off";
+    say(m.name+" marked expected off for the forecast shift ("+m.expectedOff+"). Roster availability unchanged.","info");
+  }
+  commit();
+}
+function clearAllExpectedOff(){
+  let n=0;
+  state.members.forEach(m=>{ if(m.expectedOff){ delete m.expectedOff; n++; } });
+  if(n) { say(n+" expected-off flag"+(n===1?"":"s")+" cleared.","info"); commit(); }
+  else render();
+}
+// Compute projected coverage for a specific forecast target. Returns rows suitable for
+// display and a boolean "shortfall" flag. Uses `expectedOff` on top of real availability.
+function forecastCoverage(iso, phase){
+  const platoon = forecastPlatoon(iso, phase);
+  const startMs = forecastShiftStartMs(iso, phase);
+  const rostered = state.members.filter(m => m.shift===platoon);
+  const available = rostered.filter(m => !forecastUnavailableReason(m, startMs));
+  const need = k => available.filter(m => coversNeed(m, k)).length;
+  // Qual-aware requirement rows. Everyone assumed present unless a leave status or an
+  // expected-off (PSL call etc) flag says otherwise. TOPO drivers and the composed VR
+  // minimum are checked, not just headcounts.
+  // NOTE on CLP vs VR interaction: 2 of the available must sit on the CLP, and CLP-seated
+  // members don't count toward VR. The rough check below flags it; the feasibility solve
+  // in forecastFeasibility() is the authoritative answer.
+  const vrB = vrBreakdown(available); // upper bound: assumes nobody is on CLP yet
+  const rows = [
+    { label:"Station Officers",     req:2,  have:available.filter(m => m.rank==="SO").length, key:"SO",   qual:"Station Officer" },
+    { label:"TOPO drivers",         req:2,  have:need("DRV"),                                  key:"DRV",  qual:"TOPO driver (firefighter)" },
+    { label:"CLP operators",        req:2,  have:need("CLP"),                                  key:"CLP",  qual:"Senior Firefighter with CLP" },
+    { label:"VR (composed min)",    req:VR_TOTAL, have:vrB.effective,                          key:"VR",   qual:(vrB.vrFF<VR_FF_MIN?"VR firefighter":(!vrB.soVR?"Station Officer with VR":"VR firefighter or CSR cat-2/RRS")) },
+    { label:"Total available",      req:10, have:available.length,                             key:"TOTAL", qual:"any member" }
+  ];
+  const short = rows.filter(r => r.key==="VR" ? !vrB.met : r.have < r.req);
+  return { platoon, available, rows, short, hasShortfall: short.length>0, vrB };
+}
+// Authoritative feasibility check: can a fully legal board actually be built from the
+// projected-available list? Tries the real crew solver over candidate subsets. Returns
+// { ok } or { ok:false, missing:[...qual strings...] } naming what a holdback/callback
+// would need to bring. This catches interactions the headcounts miss — e.g. enough CLP
+// holders on paper, but seating them on CLP drops VR below minimum.
+function forecastFeasibility(iso, phase){
+  const cov = forecastCoverage(iso, phase);
+  const avail = cov.available;
+  const seats = activeSeats();
+  if(avail.length >= seats.length){
+    // Try subsets: prefer keeping every qual-rich member in. Greedy: sort by "qual weight"
+    // (more quals = keep) and try the top N, then a few rotations of the tail.
+    const weight = m => (m.rank==="SO"?8:0)+(m.vr?4:0)+(m.clp?3:0)+(m.topo?2:0)+(hasCsrRrs(m)?1:0);
+    const sorted = [...avail].sort((a,b)=>weight(b)-weight(a));
+    const tries = Math.min(6, avail.length - seats.length + 1);
+    for(let k=0; k<Math.max(1,tries); k++){
+      const subset = sorted.slice(0, seats.length - 0).concat().slice(0, seats.length);
+      // rotate one tail member in per try
+      if(k>0){
+        const idx = seats.length - k;
+        if(idx>=0 && sorted[seats.length+k-1]) subset[idx] = sorted[seats.length+k-1];
+      }
+      if(subset.length===seats.length && solveCrew(subset.map(m=>({...m})))) return { ok:true, cov };
+    }
+  }
+  // Couldn't build a board — name what's missing, most specific first.
+  const missing = [];
+  cov.short.forEach(r => {
+    if(r.key==="TOTAL"){ missing.push((r.req-r.have)+" more member"+((r.req-r.have)===1?"":"s")+" (any)"); }
+    else if(r.key==="VR"){ missing.push(r.qual); }
+    else { missing.push((r.req-r.have)+" \u00d7 "+r.qual); }
+  });
+  // Interaction case: headcounts pass but the solve failed (e.g. CLP seating starves VR)
+  if(!missing.length) missing.push("a qualification mix that lets CLP be crewed without dropping VR below minimum \u2014 likely 1 more VR firefighter or CLP holder");
+  return { ok:false, cov, missing };
+}
+
+function coversNeed(m, need){
+  if(need==="VR") return m.vr || (!isOfficer(m) && hasCsrRrs(m));
+  if(need==="VR_SO") return m.rank==="SO" && m.vr;
+  if(need==="SO") return m.rank==="SO";
+  if(need==="DRV") return m.topo && !isOfficer(m);
+  if(need==="CLP") return m.rank==="SFF"&&m.clp;
+  if(need==="FF1") return seniorOrStripe(m)&&!isOfficer(m);
+  return true;
+}
+function swapKeepsCounts(members, leaver, incomer){
+  const before=vrStatus(members);
+  const sim=members.map(m=>{
+    if(m.id===leaver.id) return {...m, status:"out", seatId:null};
+    if(incomer && m.id===incomer.id) return {...m, status:"on", seatId:leaver.seatId};
+    return m;
+  });
+  const after=vrStatus(sim);
+  const notWorse = after.effective>=before.effective && (after.soVR || !before.soVR);
+  const ok = after.met || notWorse;
+  const which = !ok ? (after.effective<before.effective ? "VR minimum broken (needs SO-VR + \u2265"+VR_FF_MIN+" VR FFs + 4th slot)" : "no Station Officer with VR in the crew") : null;
+  return { ok, which };
+}
+const fmt = ts => ts ? new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "--:--";
+// "Standby" in m.ot means a shift-for-shift swap presence — NOT overtime.
+const otLabel = m => m.ot ? (m.ot==="Standby" ? " (Standby swap)" : " ("+m.ot+" OT)") : "";
+const swapHint = m => (!m.ext && m.shift!==state.shift && m.ot) ? (m.ot==="Standby" ? " Pick who they're covering in the OT panel to log the debt." : " Auto-flagged — select them to change Holdback / Standby / Callback if wrong.") : "";
+
+// ---- Actions ----
+function say(text, tone){ msg={text, tone:tone||"info"}; }
+
+function setSignQuery(v){ signQuery=v; render(); }
+function toggleStayingReliever(id){
+  stayingReliever[id] = !stayingReliever[id];
+  render();
+}
+// Post-sign-on flip for a reliever already on the board (e.g. plans changed).
+function toggleStaying(id){
+  const m=state.members.find(x=>x.id===id); if(!m||!canRelieveOut(m)) return;
+  m.staying = !m.staying;
+  say(m.name+(m.staying?" marked STAYING — kept on station, not sent out.":" no longer staying — available to be sent out."), "info");
+  commit();
+}
+// Wrapper: reliever tapped their own name after ticking "staying at Perth".
+// Records the intent then defers to signOn, which reads m.staying to decide seat vs pool.
+function signOnStaying(id){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  m.staying = true;
+  delete stayingReliever[id];
+  signOn(id);
+}
+function toggleOthers(){ othersOpen=!othersOpen; render(); }
+function toggleRelievers(){ relOpen=!relOpen; render(); }
+function openRelieverForm(){ relForm={name:"",rank:"FF",stripe:false,topo:false,clp:false,vr:false,csr:false,rrs:false}; render(); }
+function cancelRelieverForm(){ relForm=null; render(); }
+function relField(k,v){ if(!relForm) return; relForm[k] = (typeof relForm[k]==="boolean") ? !relForm[k] : v; render(); }
+function relieverFormHTML(){
+  const r=relForm;
+  const tog=(k,l)=>'<button class="tog'+(r[k]?" on":"")+'" onclick="relField(\''+k+'\')">'+l+'</button>';
+  let h='<div class="relform">';
+  h+='<input class="searchbox" style="margin:0 0 8px" placeholder="Reliever name" value="'+esc(r.name)+'" oninput="relField(\'name\',this.value)">';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+  ["SO","SFF","FF"].forEach(rk=>{ h+='<button class="tog'+(r.rank===rk?" on":"")+'" onclick="relField(\'rank\',\''+rk+'\')">'+(rk==="SO"?"Station Officer":rk==="SFF"?"Senior FF":"Firefighter")+'</button>'; });
+  h+='</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+  if(r.rank==="FF") h+=tog("stripe","STRIPE");
+  h+=tog("topo","TOPO")+tog("clp","CLP")+tog("vr","VR")+tog("csr","CSR")+tog("rrs","RRS");
+  h+='</div>';
+  h+='<div style="display:flex;gap:8px"><button class="ctl warn" onclick="addReliever()">Add to board</button><button class="ctl" onclick="cancelRelieverForm()">Cancel</button></div>';
+  h+='<div class="note" style="margin-top:8px">External relievers come in from another station and are not on any shift roster. They sign on into the relievers pool — seat them or tap Relieve next out if they\'re covering Perth crew. Remove them from the Roster tab afterwards.</div>';
+  return h+'</div>';
+}
+let relSeq = 1000;
+function addReliever(){
+  const r=relForm; if(!r) return;
+  const nm=(r.name||"").trim();
+  if(!nm){ say("Give the reliever a name first.","warn"); render(); return; }
+  const id = ++relSeq;
+  state.members.push({
+    id, name:nm, rank:r.rank, cls:(r.rank==="FF"?"Reliever":""), shift:"REL",
+    quals:[], topo:!!r.topo, stripe:(r.rank==="FF"?!!r.stripe:false), clp:!!r.clp, vr:!!r.vr, csr:!!r.csr, rrs:!!r.rrs,
+    note:"External reliever", ext:true, avail:"Available",
+    seatId:null, signOn:null, status:"off", forced:false, ot:"", excHours:false
+  });
+  relForm=null; relOpen=true;
+  say(nm+" added as an external reliever. Tap their name to sign on.","ok");
+  commit();
+}
+function removeReliever(id){
+  state.members = state.members.filter(m=>!(m.id===id && m.ext));
+  say("External reliever removed.","info");
+  commit();
+}
+
+// Try to seat an exact crew into ALL seats validly (bijection). Returns {seatId:memberId} or null.
+// Prefers keeping people in their current seat to minimise disruption.
+function solveCrew(crew){
+  const seats = activeSeats();
+  if(crew.length !== seats.length) return null;
+  // VR is invariant once everyone is seated (same people fill all seats), so pre-check it
+  if(!crewVROk(crew)) return null;
+  const order = [...seats].sort((a,b)=>SEAT_PRIORITY[a.role]-SEAT_PRIORITY[b.role]);
+  const assign = {}; const used = new Set();
+  const bt = (i) => {
+    if(i===order.length){
+      for(const tid of ["p1","p2"]){ if(pairIssue(tid, assign)) return false; }
+      return true;
+    }
+    const seat = order[i];
+    let cands = crew.filter(m=>!used.has(m.id) && seatEligibility(seat,m).ok);
+    // prefer whoever is already in this seat (fewest moves), then juniors for FF2 / seniors for FF1
+    cands.sort((a,b)=>{
+      const stay = (m)=> (m.seatId===seat.id?0:1);
+      if(stay(a)!==stay(b)) return stay(a)-stay(b);
+      if(seat.role==="FF1") return (seniorOrStripe(b)?1:0)-(seniorOrStripe(a)?1:0);
+      if(seat.role==="FF2") return (isJunior(b)?1:0)-(isJunior(a)?1:0);
+      return 0;
+    });
+    for(const m of cands){
+      assign[seat.id]=m; used.add(m.id);
+      if(bt(i+1)) return true;
+      used.delete(m.id); delete assign[seat.id];
+    }
+    return false;
+  };
+  return bt(0) ? {...assign} : null;
+}
+
+// Auto-classify a non-rostered arrival (default only — flip it in the action bar if wrong).
+// Arrival TIME is deliberately not used: a callback can be phoned at 08:10 and in by 08:40,
+// so the board's state at sign-on is the signal instead:
+//   Holdback — from the shift that just came off duty, still on the board
+//   Callback — came in because the shift couldn't crew itself: they fill an empty seat,
+//              or a holdback of their rank class is waiting to be released
+//   Standby  — relieves someone on an otherwise-covered board: a pre-arranged
+//              shift-for-shift swap (not OT)
+//   External relievers get no flag: they're relieving in, not on Perth OT.
+function classifyArrival(m, callbackSignal){
+  if(m.ot || m.ext || m.shift===state.shift) return;
+  if(m.shift===prevDuty()){ m.ot="Holdback"; stampOT(m); return; }
+  const holdbackOn = state.members.some(x=>x.status==="on" && x.ot==="Holdback" && isOfficer(x)===isOfficer(m));
+  m.ot = (holdbackOn || callbackSignal) ? "Callback" : "Standby";
+  if(m.ot==="Callback") stampOT(m);
+}
+
+// FIFO relief with rearrangement, shared by signOn and Relieve-next-out.
+// Officers relieve officers, firefighters relieve firefighters — an incoming FF can never
+// free an SO (and vice versa), so the other class is skipped outright instead of cluttering
+// the ticker with impossible candidates.
+// Holdbacks are released first (a callback exists to let the holdback go home), then
+// earliest-signed-on first. Anyone on duty under 2 hours isn't a relief candidate —
+// a fresh arrival is never "first on", so incoming crew can't accidentally boot each other.
+// For each candidate leaver, see if the rest of the crew plus the incomer can validly
+// fill every seat (jigging people around as needed). Returns true if a relief was applied.
+function attemptRelief(m, ts){
+  // Anyone who signed on BEFORE the incomer is a valid relief candidate. This lets a
+  // shift-change SO who arrived 20 minutes ago relieve one who arrived 40 minutes ago
+  // (FIFO order still applies), while stopping the incomer from booting anyone who
+  // signed on after them.
+  const seated = state.members.filter(x=>x.status==="on"&&x.seatId);
+  const queue = seated.filter(x=>isOfficer(x)===isOfficer(m) && (x.signOn||0) < ts)
+    .sort((a,b)=> ((b.ot==="Holdback")-(a.ot==="Holdback")) || a.signOn-b.signOn);
+  const skips=[];
+  for(const target of queue){
+    const crew = seated.filter(x=>x.id!==target.id).concat([m]);
+    const sol = solveCrew(crew);
+    if(!sol){
+      const crewVR = crew.filter(c=>c.vr).length;
+      if(crewVR < VR_TOTAL) skips.push(target.name+" (would drop VR below minimum)");
+      else skips.push(target.name+" (no valid crew arrangement lets them leave)");
+      continue;
+    }
+    const before = {}; seated.forEach(x=>{ before[x.id]=x.seatId; });
+    target.status="out"; target.seatId=null;
+    Object.entries(sol).forEach(([seatId, mem])=>{
+      const mm=state.members.find(x=>x.id===mem.id);
+      mm.status="on"; mm.seatId=seatId; mm.forced=false; if(!mm.signOn) mm.signOn=nowMs();
+    });
+    m.signOn = ts; classifyArrival(m, target.ot==="Holdback"); // releasing a holdback = classic callback
+    const moved = Object.keys(sol).map(sid=>sol[sid]).filter(mem=>mem.id!==m.id && before[mem.id] && before[mem.id]!==mem.seatId);
+    const seatOfIncomer = seatById(m.seatId);
+    let note = skips.length ? "First in couldn't be freed: "+skips.join(", ")+". " : "";
+    let jig = moved.length ? " Crew jigged: "+moved.map(x=>x.name+"→"+seatById(x.seatId).label).join(", ")+"." : "";
+    // Full-width release card. Include *why* the FIFO queue skipped earlier candidates so
+    // the crew see the seat/qual issue, not just the outcome.
+    const targetSeat = before[target.id] ? seatById(before[target.id]) : null;
+    const targetSeatLabel = targetSeat ? targetSeat.truckName+" "+targetSeat.label : "seat";
+    pushRelease(
+      target.name+" released off duty",
+      "Relieved by "+m.name+otLabel(m)+" · came off "+targetSeatLabel+(moved.length?" · crew jigged: "+moved.map(x=>x.name+" → "+seatById(x.seatId).label).join(", "):""),
+      skips
+    );
+    say(note+m.name+" signed on "+fmt(ts)+otLabel(m)+", relieving "+target.name+" ("+fmt(target.signOn)+"). "+m.name+" now at "+seatOfIncomer.truckName+" "+seatOfIncomer.label+"."+jig+swapHint(m), (skips.length||moved.length)?"warn":"ok");
+    commit();
+    return true;
+  }
+  return false;
+}
+
+// Explicit relief for someone already on the board without a seat (relievers pool or
+// awaiting-seat core): they relieve the first eligible person out, on request only.
+function relieveNextOut(id){
+  const m=state.members.find(x=>x.id===id); if(!m||m.status!=="on"||m.seatId) return;
+  selectedId=null;
+  if(!attemptRelief(m, m.signOn||nowMs())){
+    say("No one can be relieved by "+m.name+" without breaking crewing. Adjust seats manually or use them elsewhere.","warn");
+    render();
+  }
+}
+
+function signOn(id){
+  const m = state.members.find(x=>x.id===id); if(!m) return;
+  const ts = nowMs();
+  const occ = occupancy(state.members);
+
+  // Relievers (home AND external) default to the relievers pool — a reliever may be
+  // scheduled to be sent out regardless, so they never relieve anyone automatically.
+  // EXCEPTIONS:
+  //   - The reliever ticked "staying at Perth" at sign-on (m.staying): the shift has been
+  //     told to expect them, so seat them at any eligible empty seat before pooling.
+  //   - Otherwise, if an empty seat exists that no core member can fill, the shift genuinely
+  //     needs the reliever on a truck.
+  if(canRelieveOut(m)){
+    const fitsWithPair = (s, p) => {
+      if(!seatEligibility(s,p).ok) return false;
+      // Simulate them in the seat and run all pump rules (junior pairing + minimum one
+      // Senior Firefighter aboard) so auto-seat can't complete an illegal truck.
+      if(s.truckId==="p1"||s.truckId==="p2"){
+        const sim={...occ,[s.id]:p};
+        if(pairIssue(s.truckId,sim)) return false;
+      }
+      return true;
+    };
+    const eligible = activeSeats().filter(s=>!occ[s.id] && fitsWithPair(s,m))
+      .sort((a,b)=>SEAT_PRIORITY[a.role]-SEAT_PRIORITY[b.role]);
+    let seatToTake=null, reason="";
+    if(m.staying && eligible.length){
+      seatToTake=eligible[0];
+      reason=" and is staying at Perth — seated at "+seatToTake.truckName+" "+seatToTake.label+".";
+    } else if(eligible.length){
+      const coreAvailable = state.members.filter(x=>!canRelieveOut(x) && (
+          (x.status==="on" && !x.seatId) ||
+          (x.status==="off" && x.avail==="Available" && x.shift===state.shift)
+      ));
+      const uncoverable = eligible.filter(s=>!coreAvailable.some(c=>fitsWithPair(s,c)));
+      if(uncoverable.length){
+        seatToTake=uncoverable[0];
+        reason=" and is crewing "+seatToTake.truckName+" "+seatToTake.label+" — no core member can fill it. Move them to the pool later if core cover arrives.";
+      }
+    }
+    if(seatToTake){
+      m.status="on"; m.seatId=seatToTake.id; m.signOn=ts; m.forced=false; classifyArrival(m,true);
+      say(m.name+" signed on "+fmt(ts)+otLabel(m)+reason+swapHint(m), m.staying?"ok":"warn");
+      commit(); return;
+    }
+    m.status="on"; m.seatId=null; m.signOn=ts; classifyArrival(m,false);
+    const poolTail = m.staying ? " (staying — kept on station, not sent out)" : " — not relieving anyone. Send them out, seat them, or tap Relieve next out.";
+    say(m.name+" signed on "+fmt(ts)+otLabel(m)+" to the relievers pool"+poolTail+swapHint(m),"ok");
+    commit(); return;
+  }
+
+  // 1. best empty eligible seat (board not yet full) — just fill it
+  const empties = activeSeats()
+    .filter(s=>!occ[s.id] && seatEligibility(s,m).ok)
+    .filter(s=>{
+      // Full pump-rule simulation: junior pairing + minimum one Senior aboard.
+      if(s.truckId!=="p1" && s.truckId!=="p2") return true;
+      const sim={...occ,[s.id]:m};
+      return !pairIssue(s.truckId,sim);
+    })
+    .sort((a,b)=>SEAT_PRIORITY[a.role]-SEAT_PRIORITY[b.role]);
+  if(empties.length){
+    const seat=empties[0];
+    m.status="on"; m.seatId=seat.id; m.signOn=ts; m.forced=false;
+    classifyArrival(m,true); // they filled a hole — the shift could not crew this seat itself
+    say(m.name+" signed on "+fmt(ts)+otLabel(m)+". Seated: "+seat.truckName+" "+seat.label+"."+swapHint(m),"ok");
+    commit(); return;
+  }
+
+  // 2. board full: FIFO relief with rearrangement (see attemptRelief)
+  if(attemptRelief(m, ts)) return;
+
+  // 3. nobody can be freed: they join the on-duty queue awaiting a seat
+  m.status="on"; m.seatId=null; m.signOn=ts; classifyArrival(m,false);
+  say(m.name+" signed on "+fmt(ts)+" — no seat can be freed without breaking crewing. They're in the on-duty queue and take the next seat that opens. Core members aren't sent out relieving."+swapHint(m),"warn");
+  commit();
+}
+
+function issuesForPlacement(m, seat, ignoreId){
+  const list=[];
+  const el=seatEligibility(seat,m);
+  if(!el.ok) list.push(el.reason);
+  const occ=occupancy(state.members);
+  const sim={...occ};
+  if(ignoreId) Object.keys(sim).forEach(k=>{ if(sim[k].id===ignoreId) delete sim[k]; });
+  if(m.seatId) delete sim[m.seatId];
+  sim[seat.id]=m;
+  ["p1","p2"].forEach(tid=>{ const p=pairIssue(tid,sim); if(p) list.push(p); });
+  return list;
+}
+
+function seatTapped(seatId){
+  const seat=seatById(seatId);
+  const occ=occupancy(state.members);
+  const sitting=occ[seatId]||null;
+  const sel = selectedId ? state.members.find(x=>x.id===selectedId) : null;
+  if(!sel){ if(sitting){ selectedId=sitting.id; render(); } return; }
+  if(sitting && sitting.id===sel.id){ selectedId=null; render(); return; }
+
+  const apply=(fA,fB)=>{
+    const oldSeat=sel.seatId||null;
+    sel.status="on"; sel.seatId=seat.id; sel.forced=fA; if(!sel.signOn) sel.signOn=nowMs();
+    if(sitting){ sitting.seatId=oldSeat; sitting.forced=fB; sitting.status="on"; }
+    selectedId=null; confirmBox=null;
+    say(sitting? sel.name+" and "+sitting.name+" swapped." : sel.name+" moved to "+seat.truckName+" "+seat.label+".", (fA||fB)?"warn":"ok");
+    commit();
+  };
+  const probsA=issuesForPlacement(sel,seat,sitting?sitting.id:null);
+  let probsB=[];
+  if(sitting && sel.seatId) probsB=issuesForPlacement(sitting, seatById(sel.seatId), sel.id);
+  const all=[...probsA,...probsB];
+  if(!all.length){ apply(false,false); return; }
+  confirmBox={
+    text: sitting? "Swap "+sel.name+" and "+sitting.name+"?" : "Seat "+sel.name+" at "+seat.truckName+" "+seat.label+"?",
+    issues:all,
+    onConfirm:()=>apply(probsA.length>0, probsB.length>0)
+  };
+  render();
+}
+
+// Undo a mistaken sign-on: puts the member back to `off` with all sign-on state cleared,
+// as if they never tapped their name. Does NOT stamp them as off-going, does NOT punish
+// their fairness tally, does NOT add them to the queue of relieved members.
+function removeMistap(){
+  const sel = state.members.find(x=>x.id===selectedId); if(!sel || sel.status!=="on") return;
+  const wasOT = sel.ot && sel.ot!=="Standby";
+  const wasStandby = sel.ot==="Standby";
+  const name = sel.name;
+  // Unwind sign-on state
+  sel.status = "off"; sel.seatId = null; sel.signOn = null; sel.forced = false;
+  sel.ot = ""; sel.excHours = false; sel.staying = false;
+  // Unwind auto-flagged OT tally so fairness isn't punished for a mis-tap
+  if(wasOT) unstampOT(sel);
+  // Unwind standby ledger auto-entry if one was written for this member
+  if(wasStandby && sel.coveringFor){
+    const idx = state.standbys.findIndex(s=>s.note==="swap" && s.coverer===sel.id && s.coveree===sel.coveringFor);
+    if(idx>=0) state.standbys.splice(idx,1);
+    delete sel.coveringFor;
+  }
+  // Unwind super-holdback release if we set one
+  if(sel.superHBKey && sel.superHBReleased){
+    sel.superHBReleased = sel.superHBReleased.filter(k=>k!==sel.superHBKey);
+    delete sel.superHBKey;
+  }
+  selectedId = null; confirmBox = null;
+  say(name+" removed from the board — mis-tap. Their sign-on wasn't recorded.","info");
+  commit();
+}
+
+function releaseSelected(){
+  const sel=state.members.find(x=>x.id===selectedId);
+  if(!sel||sel.status!=="on") return;
+  const seat=sel.seatId?seatById(sel.seatId):null;
+  const probs=[];
+  if(seat){
+    probs.push(seat.truckName+" "+seat.label+" will be unfilled");
+    const sim=swapKeepsCounts(state.members, sel, null);
+    if(!sim.ok) probs.push("Drops "+sim.which);
+  }
+  const doIt=()=>{
+    const freedSeat = sel.seatId ? seatById(sel.seatId) : null;
+    sel.status="out"; sel.seatId=null; selectedId=null; confirmBox=null;
+    // Core members always stay and fill a truck: earliest on-duty core member without a
+    // seat backfills the freed seat automatically (if the seat rules allow them there).
+    let backfill="";
+    let backfillNote=null;
+    if(freedSeat){
+      const occ2=occupancy(state.members);
+      const waiting=state.members.filter(x=>x.status==="on"&&!x.seatId&&!canRelieveOut(x)).sort((a,b)=>a.signOn-b.signOn);
+      const filler=waiting.find(w=>{
+        if(!seatEligibility(freedSeat,w).ok) return false;
+        if(freedSeat.truckId==="p1"||freedSeat.truckId==="p2"){
+          const sim={...occ2,[freedSeat.id]:w};
+          if(pairIssue(freedSeat.truckId,sim)) return false;
+        }
+        return true;
+      });
+      if(filler){ filler.seatId=freedSeat.id; filler.forced=false; backfill=" "+filler.name+" backfilled "+freedSeat.truckName+" "+freedSeat.label+"."; backfillNote=filler.name+" backfilled "+freedSeat.truckName+" "+freedSeat.label; }
+    }
+    pushRelease(
+      sel.name+" released off duty",
+      (freedSeat ? "Came off "+freedSeat.truckName+" "+freedSeat.label : "Manual release") + (backfillNote?" · "+backfillNote:"")
+    );
+    say(sel.name+" released off duty."+backfill, probs.length?"warn":"ok");
+    commit();
+  };
+  if(probs.length){ confirmBox={text:"Release "+sel.name+"?", issues:probs, onConfirm:doIt}; render(); }
+  else doIt();
+}
+
+function holdBack(id, need){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  const occ=occupancy(state.members);
+  const empties=activeSeats().filter(s=>!occ[s.id]&&seatEligibility(s,m).ok)
+    .sort((a,b)=>SEAT_PRIORITY[a.role]-SEAT_PRIORITY[b.role]);
+  const preferred=empties.find(s=>s.role===need)||empties[0]||null;
+  m.status="on"; m.ot="Holdback"; if(!m.signOn) m.signOn=nowMs();
+  stampOT(m);
+  m.seatId=preferred?preferred.id:null;
+  say(m.name+" held back on voluntary overtime"+(preferred?" at "+preferred.truckName+" "+preferred.label:" (standby, seat manually)")+".","ok");
+  commit();
+}
+
+// Step a shortage forward through the SOP matrix. Manual advance — the SO decides when
+// the current step's people are exhausted or unwilling.
+function escalateShortage(stepKey){
+  state.shortageStep = state.shortageStep || {};
+  const sop = currentShortageOrder();
+  if(!sop) return;
+  const step = state.shortageStep[stepKey] || 0;
+  if(step >= sop.order.length-1) return;
+  state.shortageStep[stepKey] = step+1;
+  const next = sop.order[step+1];
+  say("Shortage escalated: now "+(next.platoon==="ASPSA"?"ASPSA (super holdback or truck offline)":next.platoon+" "+next.action)+".","info");
+  commit();
+}
+
+function requestReliever(need){
+  state.relieverReqs.push({need, at:Date.now()});
+  say("Reliever requested: "+need+". Log it through the normal channel; this board only records the flag. Tap the flag to clear it once actioned.","info");
+  commit();
+}
+// Records that a member was called back for OT. Stamps their fairness tally so they drop
+// to the bottom of the callback order; doesn't sign them on — the SO makes the call and the
+// member signs on when they arrive. If they decline or don't come in, Undo reverses it.
+function callBack(id){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  stampOT(m);
+  say(m.name+" called for a callback ("+m.shift+" shift). They'll sign on when they arrive; the tally already moved them to the bottom of the order. Undo to reverse if they can't come in.","info");
+  commit();
+}
+function dismissRelieverReq(i){
+  state.relieverReqs.splice(i,1);
+  say("Reliever request cleared.","info");
+  commit();
+}
+
+function commit(){
+  undoSnap = lastCommitted;           // state before the mutation that just happened
+  lastCommitted = JSON.stringify(state);
+  save(); render();
+}
+function undo(){
+  if(!undoSnap){ say("Nothing to undo.","info"); render(); return; }
+  state = JSON.parse(undoSnap);
+  undoSnap = null; lastCommitted = JSON.stringify(state);
+  selectedId=null; confirmBox=null;
+  say("Undone — board restored to before the last action.","info");
+  save(); render();
+}
+// keep external-reliever id counter ahead of anything already stored
+(function(){ const ext=state.members.filter(m=>m.ext).map(m=>m.id); if(ext.length) relSeq=Math.max(relSeq, ...ext); })();
+
+// ---- Crewing suggestions: who can fill a given empty seat, best first ----
+function candidatesForSeat(seat){
+  const occ = occupancy(state.members);
+  // pool = anyone who could come on: available (this or other shift) + current standby
+  const pool = state.members.filter(m =>
+    (m.status==="off" && m.avail==="Available") || (m.status==="on" && !m.seatId)
+  );
+  const eligible = pool.filter(m=>{
+    const el = seatEligibility(seat, m);
+    if(!el.ok) return false;
+    // Simulate them in the seat and run the full pump rules (junior pairing + minimum
+    // one Senior Firefighter aboard) so suggestions never propose an illegal truck.
+    if(seat.truckId==="p1"||seat.truckId==="p2"){
+      const sim = {...occ, [seat.id]: m};
+      if(pairIssue(seat.truckId, sim)) return false;
+    }
+    return true;
+  });
+  // score: tighter fit and shift/VR value ranked first
+  const score = m => {
+    let s = 0;
+    if(m.shift===state.shift) s += 100;                 // prefer the rostered shift
+    if(m.status==="on" && !m.seatId) s += 40;           // already on station (standby)
+    if(seat.role==="CLP" && m.clp) s += 20;
+    if(seat.role==="DRV" && m.topo) s += 20;
+    if(seat.role==="FF1" && m.rank==="SFF") s += 10;    // senior over striper for FF1
+    if((seat.role==="FF2") && isJunior(m)) s += 8;      // juniors naturally sit FF2
+    if(m.vr) s += 4;                                     // helps the VR count
+    return s;
+  };
+  return eligible.sort((a,b)=>score(b)-score(a));
+}
+
+// Seat a specific available/standby member into a specific seat (used by suggestions)
+function seatMember(memberId, seatId){
+  const m = state.members.find(x=>x.id===memberId);
+  const seat = seatById(seatId);
+  if(!m || !seat) return;
+  const occ = occupancy(state.members);
+  if(occ[seatId]){ say("That seat is no longer empty.","warn"); render(); return; }
+  if(!m.signOn) m.signOn = nowMs();
+  m.status="on"; m.seatId=seatId; m.forced=false;
+  say(m.name+" seated at "+seat.truckName+" "+seat.label+(m.shift!==state.shift?" (cross-shift cover)":"")+".","ok");
+  commit();
+}
+
+// ---- Roster actions ----
+function setAvail(id,val){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  m.avail=val;
+  if(val!=="Available" && m.status!=="out"){ m.status="off"; m.seatId=null; }
+  commit();
+}
+function setShift(id,val){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  m.shift=val; commit();
+}
+function toggleTag(id,key){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  m[key]=!m[key]; commit();
+}
+function toggleSenior(id){
+  const m=state.members.find(x=>x.id===id); if(!m || m.rank==="SO") return;
+  m.rank = m.rank==="SFF" ? "FF" : "SFF";
+  commit();
+}
+// Sign-on stamps are normally right (people tap themselves on as they arrive), but when
+// entries are caught up late, first-on-first-off order needs the true times.
+function setSignOnTime(id, hhmm){
+  const m=state.members.find(x=>x.id===id); if(!m||m.status!=="on") return;
+  const parts=(hhmm||"").split(":"); const h=parseInt(parts[0],10), mi=parseInt(parts[1],10);
+  if(isNaN(h)||isNaN(mi)) return;
+  const d=new Date(); d.setHours(h,mi,0,0);
+  if(d.getTime()>Date.now()) d.setDate(d.getDate()-1); // entered time is "later than now" => it was before midnight
+  m.signOn=d.getTime();
+  say(m.name+"'s sign-on time corrected to "+fmt(m.signOn)+". Queue order updated.","info");
+  commit();
+}
+function setNote(id,val){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  m.note = val.trim(); commit();
+}
+function setRosterQuery(v){ rosterQuery=v; render(); }
+
+// ---- Standby ledger ----
+// A standby: the coverer works a day in place of the coveree. The coveree then owes the coverer one back.
+// A "party" is either a Perth member (numeric id) or an external person {n:name, s:station}.
+// Reconciling logs the reverse standby (the payback), which nets the debt down.
+let sbStaff = null;   // selected party key, e.g. "m:8" or "e:bain|ellenbrook"
+let sbQuery = "";     // name search
+let sbMode = "member";// counterpart entry mode: 'member' or 'ext'
+let sbPick = "";      // counterpart member id (member mode)
+let sbExtName = "";   // counterpart external name (ext mode)
+let sbExtStn = "";    // counterpart external station (ext mode)
+// quick-log form (top of tab): self + direction + counterpart
+let qSelf = "", qDir = "byme", qMode = "ext", qPick = "", qName = "", qStn = "";
+
+const isExt = p => typeof p === "object" && p !== null;
+function partyKey(p){ return isExt(p) ? ("e:"+(p.n||"").trim().toLowerCase()+"|"+(p.s||"").trim().toLowerCase()) : ("m:"+p); }
+function partyLabel(p){ return isExt(p) ? (p.n + (p.s? " @ "+p.s : "")) : memberName(p); }
+function partySub(p){ return isExt(p) ? (p.s||"other station") : memberShift(p); }
+function resolveParty(key){
+  if(key.startsWith("m:")) return parseInt(key.slice(2),10);
+  for(const s of state.standbys){ for(const p of [s.coverer,s.coveree]){ if(isExt(p)&&partyKey(p)===key) return p; } }
+  return null;
+}
+
+function selectStaff(key){ sbStaff = (sbStaff===key?null:key); sbPick=""; sbExtName=""; sbExtStn=""; sbMode="member"; render(); }
+function setSbQuery(v){ sbQuery=v; render(); }
+function sbPickSet(v){ sbPick=v; render(); }
+function sbSetMode(m){ sbMode=m; render(); }
+function sbExtField(k,v){ if(k==="name") sbExtName=v; else sbExtStn=v; render(); }
+
+function logStandby(coverer, coveree, note){
+  if(coverer==null || coveree==null) return;
+  if(partyKey(coverer)===partyKey(coveree)) return;
+  state.standbys.unshift({ id:Date.now()+Math.floor(Math.random()*1000), coverer, coveree, date:new Date().toISOString().slice(0,10), note:note||"" });
+  const c=partyLabel(coverer), o=partyLabel(coveree);
+  say(c+" covered for "+o+". "+o+" owes "+c+" one"+(note?" ("+note+")":"")+".", "ok");
+  commit();
+}
+function counterpartParty(){
+  if(sbMode==="member"){ const id=parseInt(sbPick,10); return id?id:null; }
+  const n=(sbExtName||"").trim(); if(!n) return null;
+  return { n, s:(sbExtStn||"").trim() };
+}
+function logForStaff(direction){
+  const sel = resolveParty(sbStaff);
+  const other = counterpartParty();
+  if(sel==null || other==null){ say("Enter the other person first (pick a Perth member or type an external name).","warn"); render(); return; }
+  if(direction==="did") logStandby(sel, other);   // selected covered for other
+  else logStandby(other, sel);                     // other covered for selected
+  sbPick=""; sbExtName=""; sbExtStn="";
+}
+function reconcilePayback(selKey, otherKey){ logStandby(resolveParty(selKey), resolveParty(otherKey), "payback"); }  // selected pays other back
+function reconcileRepaid(selKey, otherKey){ logStandby(resolveParty(otherKey), resolveParty(selKey), "payback"); }   // other pays selected back
+function deleteStandby(sid){
+  state.standbys = state.standbys.filter(s=>s.id!==sid);
+  say("Standby record removed.","info");
+  commit();
+}
+
+// Quick-log form handlers
+function qSet(k,v){ ({self:()=>qSelf=v, dir:()=>qDir=v, mode:()=>qMode=v, pick:()=>qPick=v, name:()=>qName=v, stn:()=>qStn=v})[k](); render(); }
+function quickLog(){
+  const self = parseInt(qSelf,10);
+  if(!self){ say("Pick your name first.","warn"); render(); return; }
+  let other;
+  if(qMode==="member"){ other = parseInt(qPick,10)||null; }
+  else { const n=(qName||"").trim(); other = n ? {n, s:(qStn||"").trim()} : null; }
+  if(!other){ say("Enter who the standby was with (a Perth member, or a name for another station).","warn"); render(); return; }
+  if(qDir==="byme") logStandby(self, other);   // I covered them -> they owe me
+  else logStandby(other, self);                // they covered me -> I owe them
+  qPick=""; qName=""; qStn="";
+}
+
+// Pairwise standing for one party key: who they owe, and who owes them (reciprocals cancelled).
+function personBalances(key){
+  const pair={};
+  state.standbys.forEach(s=>{ pair[partyKey(s.coverer)+"|"+partyKey(s.coveree)] = (pair[partyKey(s.coverer)+"|"+partyKey(s.coveree)]||0)+1; });
+  const others=new Map();
+  state.standbys.forEach(s=>{
+    if(partyKey(s.coverer)===key) others.set(partyKey(s.coveree), s.coveree);
+    if(partyKey(s.coveree)===key) others.set(partyKey(s.coverer), s.coverer);
+  });
+  const owes=[], owed=[];
+  others.forEach((party,ok)=>{
+    const pCovO = pair[key+"|"+ok]||0;  // sel covered other -> other owes sel
+    const oCovP = pair[ok+"|"+key]||0;  // other covered sel -> sel owes other
+    const net = pCovO - oCovP;
+    if(net>0) owed.push({key:ok, party, n:net});
+    else if(net<0) owes.push({key:ok, party, n:-net});
+  });
+  owes.sort((a,b)=>b.n-a.n); owed.sort((a,b)=>b.n-a.n);
+  return {owes, owed};
+}
+
+const memberName = id => { const m=state.members.find(x=>x.id===id); return m?m.name:"(unknown)"; };
+const memberShift = id => { const m=state.members.find(x=>x.id===id); return m?m.shift:"?"; };
+function setActiveShift(s){ state.shift=s; commit(); }
+function setReqVR(v){ const n=parseInt(v,10); if(!isNaN(n)&&n>=0&&n<=10){ state.reqVR=n; say("VR requirement set to "+n+".","info"); commit(); } }
+
+// ---- Shift default seating templates ----
+function saveTemplate(){
+  const occ = occupancy(state.members);
+  const tpl = {};
+  ALL_SEATS.forEach(s=>{ if(occ[s.id]) tpl[s.id] = occ[s.id].id; });
+  if(!Object.keys(tpl).length){ say("Nothing seated to save. Crew the board first, then save it as "+state.shift+" default.","warn"); render(); return; }
+  state.templates[state.shift] = tpl;
+  say("Saved the current seating as "+state.shift+" shift's default roster.","ok");
+  commit();
+}
+function applyTemplate(){
+  const tpl = state.templates[state.shift];
+  if(!tpl){ say("No saved default for "+state.shift+" shift yet. Crew it once, then Save "+state.shift+" default.","warn"); render(); return; }
+  const occ = occupancy(state.members);
+  let seated=0; const gaps=[];
+  Object.entries(tpl).forEach(([seatId, memberId])=>{
+    if(occ[seatId]) return; // seat already taken, leave it
+    const m = state.members.find(x=>x.id===memberId);
+    const seat = seatById(seatId);
+    if(!m || !seat) return;
+    const unavailable = (m.status==="out") || (m.status==="off" && m.avail!=="Available");
+    if(unavailable){ gaps.push(seat.label+" ("+m.name+" unavailable)"); return; }
+    if(!m.signOn) m.signOn = nowMs();
+    m.status="on"; m.seatId=seatId; m.forced=false;
+    seated++;
+  });
+  say("Applied "+state.shift+" default: seated "+seated+(gaps.length?". Gaps to fill: "+gaps.join(", "):". Board fully crewed."), gaps.length?"warn":"ok");
+  commit();
+}
+
+// ---- Rotate crews: same people, new seats each set, so everyone works together ----
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+function rotateCrews(){
+  const occ = occupancy(state.members);
+  const pumpSeats = ["p1-so","p1-drv","p1-ff1","p1-ff2","p2-so","p2-drv","p2-ff1","p2-ff2"];
+  const filled = pumpSeats.filter(id=>occ[id]);
+  if(filled.length < 3){ say("Not enough crew seated on the pumps to rotate.","warn"); render(); return; }
+
+  const prev = {}; filled.forEach(id=>{ prev[id]=occ[id].id; });
+  const officers = filled.filter(id=>occ[id].rank==="SO").map(id=>occ[id]);
+  const ffs = filled.filter(id=>occ[id].rank!=="SO").map(id=>occ[id]);
+  const soSeats  = ["p1-so","p2-so"].filter(id=>occ[id]);
+  const drvSeats = ["p1-drv","p2-drv"].filter(id=>occ[id]);
+  const ff1Seats = ["p1-ff1","p2-ff1"].filter(id=>occ[id]);
+  const ff2Seats = ["p1-ff2","p2-ff2"].filter(id=>occ[id]);
+
+  function attempt(){
+    const a = {};
+    const off = shuffle([...officers]);
+    soSeats.forEach((id,i)=>{ if(off[i]) a[id]=off[i]; });
+    let pool = shuffle([...ffs]);
+    drvSeats.forEach(id=>{ const i=pool.findIndex(m=>m.topo); if(i>=0){ a[id]=pool[i]; pool.splice(i,1); } });
+    ff1Seats.forEach(id=>{ let i=pool.findIndex(m=>seniorOrStripe(m)); if(i<0) i=0; if(pool[i]){ a[id]=pool[i]; pool.splice(i,1); } });
+    ff2Seats.forEach(id=>{ if(pool.length) a[id]=pool.shift(); });
+    return a;
+  }
+  function valid(a){
+    if(Object.keys(a).length !== filled.length) return false;
+    for(const [id,m] of Object.entries(a)){ if(!seatEligibility(seatById(id),m).ok) return false; }
+    for(const tid of ["p1","p2"]){ if(pairIssue(tid,a)) return false; }
+    return true;
+  }
+  const differs = a => Object.keys(a).some(id => prev[id]!==a[id].id);
+
+  let chosen=null;
+  for(let i=0;i<80;i++){ const a=attempt(); if(valid(a)&&differs(a)){ chosen=a; break; } }
+  if(!chosen){ for(let i=0;i<80;i++){ const a=attempt(); if(valid(a)){ chosen=a; break; } } }
+  if(!chosen){ say("Couldn't find a valid new arrangement with this crew, the rules leave no room to reshuffle.","warn"); render(); return; }
+
+  const arr = {};
+  Object.entries(chosen).forEach(([id,m])=>{ const mm=state.members.find(x=>x.id===m.id); mm.seatId=id; mm.forced=false; arr[id]=m.id; });
+  // rotate the two CLP operators as well
+  if(occ["clp-1"] && occ["clp-2"]){
+    const a=occ["clp-1"].id, b=occ["clp-2"].id;
+    state.members.find(x=>x.id===a).seatId="clp-2";
+    state.members.find(x=>x.id===b).seatId="clp-1";
+    arr["clp-1"]=b; arr["clp-2"]=a;
+  } else {
+    if(occ["clp-1"]) arr["clp-1"]=occ["clp-1"].id;
+    if(occ["clp-2"]) arr["clp-2"]=occ["clp-2"].id;
+  }
+  state.setArrangement = arr;
+  say("New crew arrangement locked in, same people in new seats. This holds for the whole set; re-apply it each shift with Apply current set.","ok");
+  commit();
+}
+
+// Re-seat everyone into the current set's locked arrangement (use at the start of each shift in the set)
+function applySetArrangement(){
+  const arr = state.setArrangement;
+  if(!arr || !Object.keys(arr).length){ say("No set arrangement locked yet. Crew the board, then Start next set to lock one.","warn"); render(); return; }
+  const occ = occupancy(state.members);
+  let seated=0; const gaps=[];
+  Object.entries(arr).forEach(([seatId, memberId])=>{
+    if(occ[seatId]) return;
+    const m = state.members.find(x=>x.id===memberId); const seat = seatById(seatId);
+    if(!m || !seat) return;
+    const unavailable = (m.status==="out") || (m.status==="off" && m.avail!=="Available");
+    if(unavailable){ gaps.push(seat.label+" ("+m.name+" unavailable)"); return; }
+    if(!m.signOn) m.signOn = nowMs();
+    m.status="on"; m.seatId=seatId; m.forced=false; seated++;
+  });
+  say("Applied the current set arrangement: seated "+seated+(gaps.length?". Gaps to fill: "+gaps.join(", "):". Board fully crewed."), gaps.length?"warn":"ok");
+  commit();
+}
+
+// ---- Truck offline & holdback / OT ----
+function toggleOffline(tid){
+  if(!state.offline) state.offline={};
+  state.offline[tid] = !state.offline[tid];
+  const t = TRUCKS.find(x=>x.id===tid);
+  say(t.name+(state.offline[tid]?" taken OFFLINE. Its seats no longer flag as shortfalls.":" back ONLINE."), state.offline[tid]?"warn":"ok");
+  commit();
+}
+function toggleOT(id, type){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  const wasStandby = m.ot==="Standby";
+  const wasOT = m.ot && m.ot!=="Standby"; // Holdback / Callback / Super holdback all count for the tally
+  const prev = m.ot;
+  m.ot = (m.ot===type ? "" : type);
+  const nowOT = m.ot && m.ot!=="Standby";
+  // Standby swap link housekeeping (unchanged)
+  if(wasStandby && m.ot!=="Standby"){
+    if(m.coveringFor){
+      const idx = state.standbys.findIndex(s=>s.note==="swap" && !isExt(s.coverer) && !isExt(s.coveree) && s.coverer===m.id && s.coveree===m.coveringFor);
+      if(idx>=0) state.standbys.splice(idx,1);
+    }
+    delete m.coveringFor;
+  }
+  // Fairness tally: bump when entering an OT type; restore when leaving all OT.
+  if(!wasOT && nowOT) stampOT(m);
+  else if(wasOT && !nowOT) unstampOT(m);
+  // Super holdback release cascade — apply on entry, reverse on exit.
+  if(prev==="Super holdback" && m.ot!=="Super holdback"){
+    // Reverse: drop the release entry we recorded when we entered
+    const key = m.superHBKey;
+    if(key && m.superHBReleased){
+      m.superHBReleased = m.superHBReleased.filter(k=>k!==key);
+    }
+    delete m.superHBKey;
+  }
+  if(prev!=="Super holdback" && m.ot==="Super holdback"){
+    const key = nextRosteredKey(m);
+    if(key){
+      m.superHBKey = key;
+      m.superHBReleased = m.superHBReleased || [];
+      if(!m.superHBReleased.includes(key)) m.superHBReleased.push(key);
+    }
+  }
+  if(!m.ot) say(m.name+" OT/standby flag cleared.","info");
+  else if(m.ot==="Standby") say(m.name+" marked as Standby — a shift-for-shift swap. Pick who they're covering for on the OT panel to log the debt in the ledger.","info");
+  else if(m.ot==="Super holdback"){
+    const key = m.superHBKey || "";
+    say(m.name+" marked SUPER HOLDBACK — working through, released from their next rostered shift ("+esc(key)+"). Reverse by tapping the flag again.","warn");
+  }
+  else say(m.name+" marked as "+m.ot+" (overtime).","info");
+  commit();
+}
+// Pick the person a standby is covering for. Coverer works, so the covered person owes them.
+function setCoveringFor(coverId, coveredId){
+  const cover = state.members.find(x=>x.id===coverId); if(!cover||cover.ot!=="Standby") return;
+  const cid = parseInt(coveredId,10);
+  if(!cid){
+    // clearing the pick: pull the auto-entry if any
+    if(cover.coveringFor){
+      const idx = state.standbys.findIndex(s=>s.note==="swap" && s.coverer===cover.id && s.coveree===cover.coveringFor);
+      if(idx>=0) state.standbys.splice(idx,1);
+      delete cover.coveringFor;
+      say("Standby target cleared.","info");
+      commit();
+    }
+    return;
+  }
+  const covered = state.members.find(x=>x.id===cid); if(!covered) return;
+  // remove any prior auto-entry for this coverer, then log the new one
+  const prior = state.standbys.findIndex(s=>s.note==="swap" && s.coverer===cover.id && s.coveree===(cover.coveringFor||-1));
+  if(prior>=0) state.standbys.splice(prior,1);
+  cover.coveringFor = cid;
+  state.standbys.unshift({
+    id: Date.now()+Math.floor(Math.random()*1000),
+    coverer: cover.id, coveree: cid,
+    date: new Date(nowMs()).toISOString().slice(0,10),
+    note: "swap"
+  });
+  say(cover.name+" is covering "+covered.name+"'s "+covered.shift+" shift. "+covered.name+" owes "+cover.name+" one — logged in the ledger.","ok");
+  commit();
+}
+// Reliever (home or external) on duty but unseated, sent out to cover shortfalls at another metro station.
+// Core members, temp transfers and Station Officers are never sent out relieving.
+// State for the "back when?" picker shown after tapping Send relieving.
+// { memberId, mode } — mode is null (picker open), "shift" (this shift only) or "date" (custom).
+let relievingOutPicker = null;
+
+// End of the current on-duty shift in ms — used for the "this shift only" default.
+function currentShiftEndMs(){
+  const now = nowDate();
+  const h = now.getHours() + now.getMinutes()/60;
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if(h>=6 && h<8)   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0, 0).getTime();   // day starts 08:00
+  if(h>=8 && h<16)  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 18, 0, 0, 0).getTime();  // day shift ends 18:00
+  if(h>=16 && h<18) return new Date(d.getFullYear(), d.getMonth(), d.getDate()+1, 8, 0, 0, 0).getTime(); // night starts 18:00, ends 08:00 tomorrow
+  if(h>=18)         return new Date(d.getFullYear(), d.getMonth(), d.getDate()+1, 8, 0, 0, 0).getTime(); // still that night
+  // before 06:00 — last night's crew: shift ends 08:00 today
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8, 0, 0, 0).getTime();
+}
+
+// Auto-clear Relieving out whose end date has passed. Called each render; safe to run often.
+function autoClearRelievingOut(){
+  const t = nowMs();
+  let cleared = 0;
+  state.members.forEach(m=>{
+    if(m.avail==="Relieving out" && m.relievingOutUntil && t >= m.relievingOutUntil){
+      m.avail = "Available";
+      delete m.relievingOutUntil;
+      cleared++;
+    }
+  });
+  return cleared;
+}
+
+// Format an end-time for display — "back at 18:00", "back 15 Aug".
+function relOutUntilLabel(ms){
+  if(!ms) return "";
+  const d = new Date(ms);
+  const now = nowDate();
+  const sameDay = d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+  const nextDay = ()=>{const t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1); return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate();};
+  if(sameDay || (nextDay() && d.getHours()===8)) return "back "+fmt(ms);
+  return "back "+d.toLocaleDateString([], {day:"2-digit",month:"short"});
+}
+
+function sendRelieving(id){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  if(!canRelieveOut(m)){ say(m.name+" is core crew — core members, temp transfers and SOs aren't sent out relieving. Flag them RELIEVER in the Roster tab first if that's wrong.","warn"); render(); return; }
+  if(m.staying){ say(m.name+" is staying at Perth — clear the staying flag first if that's changed.","warn"); render(); return; }
+  if(m.status!=="on" || m.seatId){ say(m.name+" is crewing a seat — free the seat first before sending them out relieving.","warn"); render(); return; }
+  // Open the "back when?" picker rather than committing immediately. The picker renders
+  // inline in the action bar (see render()).
+  relievingOutPicker = { memberId: id, mode: null, dateVal: "" };
+  render();
+}
+// Commit the send-relieving action with a chosen return time. Called from picker buttons.
+function commitSendRelieving(id, until){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  if(m.status!=="on" || m.seatId){ relievingOutPicker=null; render(); return; }
+  m.status="off"; m.seatId=null; m.signOn=null; m.ot="";
+  m.avail="Relieving out";
+  if(until) m.relievingOutUntil = until; else delete m.relievingOutUntil;
+  relievingOutPicker=null; selectedId=null;
+  const suffix = until ? " ("+relOutUntilLabel(until)+")" : " (indefinite — clear manually)";
+  say(m.name+" sent out relieving"+suffix+".","ok");
+  commit();
+}
+function cancelSendRelieving(){ relievingOutPicker=null; render(); }
+// Called from the picker's inline handlers. Kept out-of-line because inline HTML handlers
+// resolve against `window`, not the module scope, so writing `relievingOutPicker.x=...`
+// directly from an onchange attribute throws "not defined" silently.
+function setRelievingOutDate(v){ if(relievingOutPicker) relievingOutPicker.dateVal = v; }
+function commitSendRelievingFromDate(id){
+  if(!relievingOutPicker) return;
+  const v = relievingOutPicker.dateVal;
+  if(!v) return;
+  const d = new Date(v+"T08:00:00");
+  commitSendRelieving(id, d.getTime());
+}
+function toggleExcHours(id){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  m.excHours=!m.excHours;
+  say(m.name+(m.excHours?" flagged for excessive hours: excused next night shift, still paid.":" excessive-hours flag cleared."), "info");
+  commit();
+}
+
+// ---- Board controls ----
+function toggleShiftMsg(){ showShiftMsg=!showShiftMsg; render(); }
+// Jump to the Standbys tab with the swap half-filled: the standby person covered for someone,
+// so pick the coveree and Log standby records the debt in one tap.
+function logSwapFor(id){
+  const m=state.members.find(x=>x.id===id); if(!m) return;
+  qSelf=String(id); qDir="byme"; qMode="member"; qPick=""; sbStaff="m:"+id; selectedId=null;
+  say("Pick who "+m.name+" is covering for, then Log standby — the debt lands in the ledger.","info");
+  setTab("standby");
+}
+function copyShiftMsg(){
+  const txt = generateShiftMessage(state.members);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>say("Shift message copied.","ok"), ()=>say("Copy failed, select the text and copy manually.","warn"));
+  } else { say("Select the text in the box and copy manually.","info"); }
+  render();
+}
+const needLabel = { SO:"Station Officer", DRV:"topo driver", CLP:"CLP operator (senior)", FF1:"FF1 (striper/senior)", VR:"VR technician (VR, or FF with CSR/RRS)", VR_SO:"Station Officer holding VR" };
+function generateShiftMessage(members){
+  const occ=occupancy(members);
+  const active=state.shift;
+  const now=new Date();
+  const dt=now.toLocaleDateString([], {weekday:"short",day:"2-digit",month:"short"})+" "+fmt(now.getTime());
+  let L=[];
+  L.push("PERTH STATION — "+active+" SHIFT");
+  L.push(dt);
+  L.push("");
+  // trucks — who fills what position, seat by seat
+  L.push("TRUCKS");
+  TRUCKS.forEach(t=>{
+    if(truckOffline(t.id)){ L.push("  "+t.name+": OFFLINE"); return; }
+    L.push("  "+t.name+" ("+t.sub+")");
+    t.seats.forEach(s=>{
+      const m=occ[s.id];
+      let line="    "+s.label+": ";
+      if(!m){ L.push(line+"UNFILLED"); return; }
+      line+=m.name;
+      if(m.ot) line+=" \u2014 "+(m.ot==="Standby"?"Standby swap":m.ot+" OT");
+      if(m.excHours) line+=" \u2014 excessive hours";
+      const el=seatEligibility({...s,truckId:t.id,truckName:t.name},m);
+      if(!el.ok) line+="  (! "+el.reason.toLowerCase()+")";
+      L.push(line);
+    });
+    if(t.id!=="clp"){ const p=pairIssue(t.id,occ); if(p) L.push("    (! "+p+")"); }
+  });
+  // FUTURE: daily tasks / scheduled checks section slots in here (per-shift checklist,
+  // BA/appliance checks, hydrant runs etc.) — planned for a later iteration.
+  const vs=vrStatus(members);
+  const c=shiftCounts(members);
+  L.push("");
+  L.push("REQUIREMENTS");
+  L.push("  VR "+vs.effective+"/"+VR_TOTAL+(vs.subUsed?" (incl. 1 CSR/RRS)":"")+(vs.soVR?"":" — NO SO WITH VR")+"   SNAPs(SO) "+c.so+"/"+REQ_SO+"   CLP "+(truckOffline("clp")?"offline":(["clp-1","clp-2"].every(id=>occ[id]&&seatEligibility(seatById(id),occ[id]).ok)?"crewed":"short")));
+  // shortfalls + holdback/callback determination
+  const issues=boardIssues(members);
+  L.push("");
+  if(!issues.length){
+    L.push("CREWING: fully crewed, no holdbacks or callbacks required.");
+  } else {
+    L.push("SHORTFALLS");
+    issues.forEach(i=>L.push("  - "+i.text));
+    const needs=[...new Set(issues.map(i=>i.need))];
+    L.push("");
+    L.push("HOLDBACK / CALLBACK REQUIRED");
+    needs.forEach(need=>{
+      const onShiftFree = members.filter(m=>m.avail==="Available"&&m.status==="off"&&m.shift===active&&coversNeed(m,need));
+      const label=needLabel[need]||need;
+      if(onShiftFree.length){
+        L.push("  "+label+": "+onShiftFree.length+" available on shift ("+onShiftFree.slice(0,5).map(m=>m.name).join(", ")+")");
+      } else {
+        const otherFree = members.filter(m=>m.avail==="Available"&&m.status==="off"&&m.shift!==active&&coversNeed(m,need));
+        L.push("  "+label+": none on shift — OT holdback/callback required"+(otherFree.length?" (able off-shift: "+otherFree.slice(0,4).map(m=>m.name+" "+m.shift).join(", ")+")":", or external reliever"));
+      }
+    });
+  }
+  // current OT (standby swaps are not OT and are listed separately)
+  const ot=members.filter(m=>m.status==="on"&&m.ot&&m.ot!=="Standby");
+  if(ot.length){
+    L.push("");
+    L.push("ON OT NOW");
+    ot.forEach(m=>L.push("  - "+m.name+" ("+m.ot+(m.shift!==active?", "+m.shift+" shift":"")+(m.excHours?", excessive hours":"")+(m.ot==="Super holdback"&&m.superHBKey?", released "+m.superHBKey:"")+")"));
+  }
+  const sbSwaps=members.filter(m=>m.status==="on"&&m.ot==="Standby");
+  if(sbSwaps.length){
+    L.push("");
+    L.push("ON STANDBY (SWAP, NOT OT)");
+    sbSwaps.forEach(m=>L.push("  - "+m.name+(m.shift!==active?" ("+m.shift+" shift)":"")));
+  }
+  // relievers to send out — handoff to reliever tracker
+  const relOut=members.filter(m=>m.status==="on"&&!m.seatId&&canRelieveOut(m));
+  const unalloc=members.filter(m=>m.status==="on"&&!m.seatId&&!canRelieveOut(m));
+  L.push("");
+  L.push("RELIEVING");
+  if(relOut.length) L.push("  Relievers on station, available to send out: "+relOut.map(m=>m.name).join(", "));
+  if(unalloc.length) L.push("  Awaiting a truck seat (core — stay on, not sent relieving): "+unalloc.map(m=>m.name).join(", "));
+  L.push("  Who goes out relieving: per the relieving tracker (surge firefighters first, then home relievers by lowest tally, fairness kept). Confirm before sending.");
+  L.push("");
+  L.push("— Perth E-Duty Board (concept)");
+  return L.join("\n");
+}
+
+function fullReset(){
+  confirmBox={text:"Full reset? This restores the seeded roster and wipes all saved changes on this device.", issues:["All tag edits, availability changes, sign-ons and shift notes will be lost","Consider Export backup first if you want a way back","Undo can still restore for one action after this"], onConfirm:()=>{
+    localStorage.removeItem(STORE_KEY);
+    undoSnap = lastCommitted;
+    state=load(); lastCommitted=JSON.stringify(state);
+    selectedId=null; confirmBox=null;
+    say("Restored to seed roster.","info"); render();
+  }};
+  render();
+}
+// New shift (clear board): wipe on-duty state and per-shift flags but keep roster edits.
+// Availability, tags, notes, RELIEVER flags and forecast holdback notes all stay.
+function clearBoard(){
+  const onCount = state.members.filter(m=>m.status==="on" || m.status==="out").length;
+  confirmBox={text:"Clear the board for a new shift?", issues:[
+    onCount+" on-duty and off-going sign-ons will be cleared",
+    "OT flags, Staying, Standby pairings and Super holdback releases are wiped",
+    "Roster tab (availability, tags, notes, RELIEVER flags) is kept",
+    "Forecast holdback notes for the incoming shift stay",
+    "Undo restores this"
+  ], onConfirm:()=>{
+    state.members.forEach(m=>{
+      m.status="off"; m.seatId=null; m.signOn=null; m.forced=false;
+      m.ot=""; m.excHours=false; m.staying=false;
+      delete m.coveringFor;
+      delete m.expectedOff; // expected-off predictions applied to the shift now starting
+      m.superHBReleased = [];
+      delete m.superHBKey;
+    });
+    state.relieverReqs = [];
+    state.shortageStep = {};
+    releaseNotes = [];
+    selectedId=null; confirmBox=null;
+    say("Board cleared for new shift. Roster and forecast notes kept.","info");
+    commit();
+  }};
+  render();
+}
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="perth-duty-board-"+new Date().toISOString().slice(0,10)+".json";
+  a.click(); URL.revokeObjectURL(a.href);
+  say("Board exported as a JSON file. Keep it as a backup or import it on another device.","info");
+  render();
+}
+function importJSON(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+      const data=JSON.parse(r.result);
+      if(!data.members) throw new Error("bad file");
+      undoSnap = lastCommitted;
+      state=data; lastCommitted=JSON.stringify(state);
+      save(); say("Board imported.","ok"); render();
+    }catch(e){ say("That file could not be read as a board export.","bad"); render(); } };
+  r.readAsText(f);
+}
+
+// ---- Rendering ----
+function setTab(t){ tab=t;
+  document.getElementById("tab-board").classList.toggle("active",t==="board");
+  document.getElementById("tab-roster").classList.toggle("active",t==="roster");
+  document.getElementById("tab-standby").classList.toggle("active",t==="standby");
+  document.getElementById("tab-forecast").classList.toggle("active",t==="forecast");
+  document.getElementById("view-board").classList.toggle("hidden",t!=="board");
+  document.getElementById("view-roster").classList.toggle("hidden",t!=="roster");
+  document.getElementById("view-standby").classList.toggle("hidden",t!=="standby");
+  document.getElementById("view-forecast").classList.toggle("hidden",t!=="forecast");
+  render();
+}
+const esc = s => String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const canRelieveOut = m => !!(m.reliever || m.ext); // core, temp transfers and SOs are never sent out
+function tagsHTML(m, activeShift){
+  let h='<span class="tags">';
+  const rank = m.rank==="FF" ? (m.cls||"FF") : m.rank;
+  h+='<span class="tag rank">'+esc(rank)+'</span>';
+  if(m.stripe&&m.rank==="FF") h+='<span class="tag rank">STRIPE</span>';
+  if(m.reliever&&!m.ext) h+='<span class="tag vis">RELIEVER</span>';
+  if(m.staying) h+='<span class="tag vis">STAYING</span>';
+  if(activeShift && m.shift!==activeShift) h+='<span class="tag vis">'+esc(m.shift)+' SHIFT</span>';
+  if(m.note) h+='<span class="tag vis">'+esc(m.note)+'</span>';
+  [["topo","TOPO"],["clp","CLP"],["vr","VR"],["csr","CSR"],["rrs","RRS"]].forEach(([k,l])=>{ if(m[k]) h+='<span class="tag q">'+l+'</span>'; });
+  return h+'</span>';
+}
+
+function render(){
+  // Auto-clear any Relieving out whose end date has passed — done before anything else
+  // reads availability so filters, sign-on list and roster all see the updated status.
+  const rc = autoClearRelievingOut();
+  if(rc) say(rc+" member"+(rc===1?"":"s")+" auto-cleared from Relieving out (scheduled return reached).","info");
+  const members=state.members;
+  const active=state.shift;
+  const occ=occupancy(members);
+  const counts=shiftCounts(members);
+  const issues=boardIssues(members);
+  // On-duty queue: EVERYONE on duty in sign-on order — seated crew, core awaiting a seat,
+  // and relievers in the pool. Relievers keep their time and place: if a core member never
+  // shows and the reliever ends up staying, their spot in first-on-first-off already stands.
+  const queue=members.filter(m=>m.status==="on").sort((a,b)=>a.signOn-b.signOn);
+  const relPool=members.filter(m=>m.status==="on"&&!m.seatId&&canRelieveOut(m));
+  // People currently being covered by a standby aren't available to be called in — the swap
+  // handles their absence. Members released from this shift by a Super holdback are also out.
+  const coveredIds = new Set(members.filter(m=>m.status==="on"&&m.ot==="Standby"&&m.coveringFor).map(m=>m.coveringFor));
+  const avail=members.filter(m=>m.status==="off"&&m.avail==="Available"&&!coveredIds.has(m.id)&&!releasedFromActive(m));
+  const incoming=avail.filter(m=>!m.ext&&m.shift===active);
+  const otherShift=avail.filter(m=>!m.ext&&m.shift!==active);
+  const relievers=avail.filter(m=>m.ext);
+  const offGoing=members.filter(m=>m.status==="out");
+  const sel=selectedId?members.find(m=>m.id===selectedId):null;
+
+  const duty = currentDuty();
+  document.getElementById("shiftsel").innerHTML =
+    SHIFTS.map(s=>'<button class="'+(s===active?"on":"")+(s===duty.shift?" nowdot":"")+'" onclick="setActiveShift(\''+s+'\')">'+s+'</button>').join("");
+  const nowD=nowDate();
+  const dl=document.getElementById("dutynow");
+  const onNow='ON NOW: '+duty.shift+' shift · '+duty.phase+' · <span id="nowdate">'+nowD.toLocaleDateString([], {weekday:"long",day:"2-digit",month:"short",year:"numeric"})+'</span> · <span id="nowtime">'+fmt(nowD.getTime())+'</span>';
+  dl.innerHTML = onNow + (active!==duty.shift ? ' <button class="jumpbtn" onclick="setActiveShift(\''+duty.shift+'\')">viewing '+active+' — back to '+duty.shift+'</button>' : '');
+
+  const clpOff = truckOffline("clp");
+  const clpFilled=["clp-1","clp-2"].every(id=>occ[id]&&seatEligibility(seatById(id),occ[id]).ok);
+  const clpChip = clpOff
+    ? '<div class="chip" style="align-items:center;border-color:var(--faint);color:var(--faint)"><span class="lbl">CLP OFFLINE</span></div>'
+    : '<div class="chip '+(clpFilled?"ok":"bad")+'" style="align-items:center"><span class="lbl">CLP '+(clpFilled?"CREWED":"SHORT")+'</span></div>';
+  const vs=vrStatus(members);
+  const vrChip='<div class="chip '+(vs.met?"ok":"bad")+'" title="'+(vs.soVR?"SO with VR present":"needs an SO with VR")+(vs.subUsed?" · incl. 1 CSR/RRS":"")+'"><span class="lbl">VR'+(vs.subUsed?"*":"")+'</span><span class="val">'+vs.effective+'<span class="of">/'+VR_TOTAL+'</span></span></div>';
+  document.getElementById("strip").innerHTML =
+    vrChip + chip("SNAPS (SO)",counts.so,REQ_SO)+ clpChip +
+    '<div class="clock" id="stripclock">'+fmt(nowMs())+'</div>';
+
+  const tick=document.getElementById("ticker");
+  tick.innerHTML=esc(msg.text)+(undoSnap?' <button class="jumpbtn" onclick="undo()">Undo</button>':'');
+  tick.className="t-"+msg.tone;
+  const reh=document.getElementById("rehbanner");
+  if(reh){
+    if(rehearsal){
+      const vd = nowDate();
+      const vHHMM = String(vd.getHours()).padStart(2,"0")+":"+String(vd.getMinutes()).padStart(2,"0");
+      const dateStr = vd.toLocaleDateString([], {weekday:"short",day:"2-digit",month:"short"});
+      reh.innerHTML = '<span>▶ REHEARSAL · '+esc(dateStr)+' · <input type="time" value="'+vHHMM+'" onchange="setRehearsalTime(this.value)" style="background:#12161b;color:var(--amber);border:1px solid var(--amber);border-radius:5px;padding:2px 6px;font-family:inherit;font-weight:900"> · nothing saves</span><span style="display:flex;gap:6px"><button onclick="setRehearsalTime(\'06:00\')">06:00</button><button onclick="setRehearsalTime(\'16:00\')">16:00</button><button onclick="setRehearsalTime(\'18:00\')">18:00</button><button onclick="exitRehearsal()">Exit rehearsal</button></span>';
+    } else reh.innerHTML = '';
+  }
+  // Release notifications (session, 60s TTL) — full-width cards below the strip.
+  const rel = document.getElementById("relnotes");
+  if(rel){
+    pruneReleases();
+    if(!releaseNotes.length){ rel.innerHTML = ''; }
+    else rel.innerHTML = releaseNotes.map(n=>{
+      let skip = '';
+      if(n.skipNotes && n.skipNotes.length){
+        skip = '<div class="rskip"><b>QUEUE SKIPPED</b><br>'+n.skipNotes.map(esc).join('<br>')+'</div>';
+      }
+      return '<div class="relnote"><div class="rhd"><span>▶ '+esc(n.title)+' · '+fmt(n.ts)+'</span><button class="rx" onclick="dismissRelease('+n.id+')">Dismiss</button></div><div class="rbd">'+esc(n.body)+'</div>'+skip+'</div>';
+    }).join('');
+  }
+
+  if(tab==="board") renderBoard({occ,counts,issues,queue,relPool,incoming,otherShift,relievers,offGoing,sel,active});
+  else if(tab==="forecast") renderForecast();
+  else if(tab==="roster") renderRoster();
+  else renderStandbys();
+  renderBar(sel);
+}
+function chip(lbl,val,req){
+  const ok=val>=req;
+  return '<div class="chip '+(ok?"ok":"bad")+'"><span class="lbl">'+lbl+'</span><span class="val">'+val+'<span class="of">/'+req+'</span></span></div>';
+}
+
+function renderBoard(d){
+  const {occ,counts,issues,queue,relPool,incoming,otherShift,relievers,offGoing,sel,active}=d;
+  const q = signQuery.trim().toLowerCase();
+  const match = m => !q || m.name.toLowerCase().includes(q);
+  // Relievers get a "Staying at Perth" checkbox next to their name at sign-on. If ticked,
+  // tapping them signs on with staying=true, which prefers seating and blocks send-relieving.
+  // Non-relievers keep the plain row.
+  const rowBtn = (m,size) => {
+    if(canRelieveOut(m)){
+      const stay = !!stayingReliever[m.id];
+      const onclick = stay ? "signOnStaying" : "signOn";
+      return '<div class="relrow" style="display:flex;gap:6px;align-items:stretch;margin-bottom:8px">'+
+        '<button class="rowbtn" style="flex:1;margin:0" onclick="'+onclick+'('+m.id+')"><span class="nm"'+(size?' style="font-size:'+size+'"':'')+'>'+esc(m.name)+'</span>'+tagsHTML(m,active)+'</button>'+
+        '<label class="tog'+(stay?" on":"")+'" style="display:flex;align-items:center;padding:0 10px;cursor:pointer;font-size:11px" title="Reliever staying at Perth: seat them, don\'t send out"><input type="checkbox" style="display:none" '+(stay?"checked":"")+' onchange="toggleStayingReliever('+m.id+')">STAYING</label>'+
+        '</div>';
+    }
+    return '<button class="rowbtn" style="margin-bottom:8px" onclick="signOn('+m.id+')"><span class="nm"'+(size?' style="font-size:'+size+'"':'')+'>'+esc(m.name)+'</span>'+tagsHTML(m,active)+'</button>';
+  };
+
+  let colA='<div class="col col-signon">';
+  colA+='<div class="panel"><div class="hd"><span>Sign on</span><span>'+active+' shift</span></div><div class="bd">';
+  colA+='<input class="searchbox" placeholder="Search any name across all shifts…" value="'+esc(signQuery)+'" oninput="setSignQuery(this.value)">';
+
+  // Active shift first
+  const inc = incoming.filter(match);
+  colA+='<div class="grouplbl">'+active+' shift · rostered</div>';
+  colA+= inc.length ? inc.map(m=>rowBtn(m)).join("")
+    : '<div class="empty-note">'+(q?"No match on "+active+" shift.":"No one from "+active+" shift marked Available.")+'</div>';
+
+  // Other shifts, grouped, only when searching or expanded
+  const otherMatched = otherShift.filter(match);
+  const showOther = q ? true : othersOpen;
+  colA+='<button class="grouptoggle" onclick="toggleOthers()">'+(showOther?"▾":"▸")+' Other shifts · call back / hold back (OT) ('+otherMatched.length+')</button>';
+  if(showOther){
+    SHIFTS.filter(s=>s!==active).forEach(sh=>{
+      const g=otherMatched.filter(m=>m.shift===sh);
+      if(!g.length) return;
+      colA+='<div class="grouplbl sub">'+sh+' shift</div>';
+      colA+=g.map(m=>rowBtn(m,"14px")).join("");
+    });
+    if(!otherMatched.length) colA+='<div class="empty-note">'+(q?"No match on other shifts.":"None available.")+'</div>';
+  }
+
+  // External relievers
+  const relMatched = relievers.filter(match);
+  colA+='<button class="grouptoggle" onclick="toggleRelievers()">'+(relOpen?"▾":"▸")+' External relievers ('+relMatched.length+')</button>';
+  if(relOpen){
+    colA+= relMatched.length ? relMatched.map(m=>rowBtn(m,"14px")).join("") : '<div class="empty-note">None added yet.</div>';
+    colA+= relForm
+      ? relieverFormHTML()
+      : '<button class="ctl" style="margin-top:6px" onclick="openRelieverForm()">+ Add external reliever</button>';
+  }
+  colA+='</div></div>';
+  const poolRow = m =>
+      '<button class="rowbtn" style="margin-bottom:8px'+(selectedId===m.id?';border-color:var(--amber);background:var(--amberbg)':'')+'" onclick="selectMember('+m.id+')"><span class="nm" style="font-size:14px">'+esc(m.name)+' <span style="color:var(--faint);font-size:12px;font-weight:500">on '+fmt(m.signOn)+'</span></span>'+tagsHTML(m,active)+'</button>';
+  colA+='<div class="panel"><div class="hd"><span>Relievers · on station</span><span>'+relPool.length+'</span></div><div class="bd">';
+  colA+= relPool.length
+    ? '<div class="note" style="margin:0 0 8px">Signed on, not crewing a truck — available to be sent out to cover metro shortfalls. Tap a name, then Send relieving.</div>'+relPool.map(poolRow).join("")
+    : '<div class="empty-note">No relievers on station. Relievers (home or external) sign on straight into this pool and relieve no one automatically — send them out, seat them manually, or use Relieve next out.</div>';
+  colA+='</div></div>';
+  colA+='<div class="panel"><div class="hd"><span>Off-going</span><span>'+offGoing.length+'</span></div><div class="bd">';
+  colA+= offGoing.length ? offGoing.map(m=>
+    '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 4px;border-bottom:1px solid var(--line);font-size:14px"><span style="color:var(--dim)">'+esc(m.name)+(m.ot?(m.ot==="Standby"?" · Standby":" · OT "+m.ot):"")+'</span>'+tagsHTML(m,active)+'</div>'
+  ).join("") : '<div class="empty-note">No one relieved yet.</div>';
+  colA+='</div></div></div>';
+
+  let colB='<div class="col">';
+  colB+='<div class="panel"><div class="hd"><span>'+active+' shift · crew &amp; rotation</span></div><div class="bd"><div style="display:flex;gap:8px;flex-wrap:wrap">';
+  colB+='<button class="ctl" onclick="applySetArrangement()">Apply current set</button>';
+  colB+='<button class="ctl warn" onclick="rotateCrews()">Start next set (rotate)</button>';
+  colB+='<button class="ctl" onclick="applyTemplate()">Apply '+active+' default</button>';
+  colB+='<button class="ctl" onclick="saveTemplate()">Save '+active+' default</button>';
+  colB+='</div>';
+  // Forecast holdbacks for this shift, if any — shown at top so the SO can plan releases first.
+  const fcHb = state.members.filter(m => m.shift===active && m.forecastHoldback);
+  if(fcHb.length){
+    colB+='<div style="margin-top:10px;padding:8px 10px;background:var(--panel);border-left:3px solid var(--amber);border-radius:4px"><div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--amber);margin-bottom:4px">FORECAST HOLDBACKS · '+fcHb.length+'</div>';
+    fcHb.forEach(m => {
+      colB+='<div style="font-size:12px;padding:2px 0"><b>'+esc(m.name)+'</b> · '+esc(m.forecastHoldback)+' <button class="ctl" style="font-size:10px;padding:1px 6px;margin-left:6px" onclick="setForecastHoldback('+m.id+',\'\')">Clear</button></div>';
+    });
+    colB+='</div>';
+  }
+  // Look ahead to the next shift's coverage. If expected-off flags produce a shortfall,
+  // surface it here so the SO knows a holdback is likely coming from the current shift.
+  const nextFC = defaultForecastTarget();
+  const nextFeas = forecastFeasibility(nextFC.iso, nextFC.phase);
+  const nextCov = nextFeas.cov;
+  const anyExpectedOff = state.members.some(m => m.expectedOff && m.shift===nextCov.platoon);
+  if(!nextFeas.ok && anyExpectedOff){
+    const nextLabel = nextFC.phase+" · "+nextCov.platoon+" platoon";
+    colB+='<div style="margin-top:10px;padding:8px 10px;background:#3a1810;border-left:3px solid var(--red);border-radius:4px"><div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--red);margin-bottom:4px">HOLDBACK EXPECTED · NEXT SHIFT ('+esc(nextLabel)+')</div>';
+    colB+='<div style="font-size:12px;color:var(--dim);margin-bottom:4px">The holdback (or callback) must cover: <b style="color:var(--text)">'+nextFeas.missing.map(esc).join("; ")+'</b>.</div>';
+    const nextSOP = forecastShortageOrder(nextFC.iso, nextFC.phase);
+    if(nextSOP && nextSOP.order[0].action==="Hold Back"){
+      colB+='<div style="font-size:11px;color:var(--faint)">SOP 1st relief: <b style="color:var(--amber)">'+esc(nextSOP.order[0].platoon)+' Hold Back</b>'+(nextSOP.order[0].platoon===active?' (that\'s this shift)':'')+'</div>';
+    }
+    colB+='<div style="margin-top:6px"><button class="ctl" style="font-size:11px;padding:2px 8px" onclick="setTab(\'forecast\')">Open Forecast tab</button></div>';
+    colB+='</div>';
+  }
+  colB+='</div></div>';
+  TRUCKS.forEach(t=>{
+    const off = truckOffline(t.id);
+    colB+='<div class="truck'+(off?' offline':'')+'"><div class="hd"><span class="platebadge'+(off?' grey':'')+'">'+t.name+'</span><span class="sub">'+t.sub+'</span>'+
+      '<button class="offbtn'+(off?' on':'')+'" onclick="toggleOffline(\''+t.id+'\')">'+(off?"● OFFLINE · bring online":"Take offline")+'</button></div>';
+    if(off){
+      colB+='<div class="offlinebanner">TRUCK OFFLINE — not counted in crewing</div>';
+    }
+    colB+='<div class="seats">';
+    t.seats.forEach(seat=>{
+      const full={...seat,truckId:t.id,truckName:t.name};
+      const m=occ[seat.id];
+      let cls="empty", reason=null;
+      if(m){
+        const el=seatEligibility(full,m);
+        reason = !el.ok ? el.reason : null;
+        if(!reason && (seat.role==="FF1"||seat.role==="FF2"||seat.role==="DRV")){ const p=pairIssue(t.id,occ); if(p) reason=p; }
+        cls = (reason||m.forced) ? "invalid" : "valid";
+      }
+      const selHere = m && selectedId===m.id;
+      colB+='<button class="seat '+cls+(selHere?' sel':'')+(off?' dim':'')+'" onclick="seatTapped(\''+seat.id+'\')">';
+      colB+='<div class="slabel">'+seat.label+'</div>';
+      if(m){
+        const badges=(m.ot?(m.ot==="Standby"?' · STANDBY':m.ot==="Super holdback"?' · SUPER HB':' · OT '+m.ot):'')+(m.excHours?' · EXC HRS':'');
+        colB+='<div class="occ"><span class="nm">'+esc(m.name)+badges+'</span><span class="meta"><span class="time">'+fmt(m.signOn)+'</span>'+tagsHTML(m,active)+'</span></div>';
+        if(reason) colB+='<div class="why">'+esc(reason)+'</div>';
+        else if(m.forced) colB+='<div class="forced">Placed by officer override</div>';
+      } else {
+        colB+='<div class="invite'+(sel&&!off?' hot':'')+'">'+(off?"—":(sel?("Tap to seat "+esc(sel.name)):"Unfilled"))+'</div>';
+      }
+      colB+='</button>';
+    });
+    colB+='</div></div>';
+  });
+  const vsCard=vrStatus(state.members);
+  colB+='<div class="vrcard"><div><div class="slabel">VR VEHICLE</div><div style="font-size:13px;color:var(--dim)">Manned from other trucks on a VR job. Minimum: SO with VR + '+VR_FF_MIN+' VR firefighters + a 4th (VR or one CSR cat-2/RRS). CLP crew don\'t count.'+(vsCard.subUsed?" · 1 CSR/RRS counted":"")+(vsCard.soVR?"":" · no SO with VR!")+'</div></div><div style="font-size:18px;font-weight:900;color:'+(vsCard.met?"var(--green)":"var(--red)")+'">'+vsCard.effective+'/'+VR_TOTAL+'</div></div>';
+  colB+='</div>';
+
+  let colC='<div class="col">';
+  // Two independent FIFO queues: Station Officers are only relieved by other SOs, so their
+  // order is unaffected by firefighters coming and going, and vice versa. Display matches
+  // the solver's rank filter.
+  const officerQ = queue.filter(m=>isOfficer(m));
+  const ffQ = queue.filter(m=>!isOfficer(m));
+  const qRow = (m,i) => {
+    const where = fmt(m.signOn)+' · '+(m.seatId ? seatById(m.seatId).truckName : (canRelieveOut(m)?'relievers pool':'awaiting seat'));
+    const inner = '<span style="font-weight:'+(i===0?800:600)+'"><span class="idx">'+String(i+1).padStart(2,"0")+'</span>'+esc(m.name)+'</span><span class="where">'+where+'</span>';
+    return m.seatId
+      ? '<div class="qrow'+(i===0?' first':'')+'">'+inner+'</div>'
+      : '<button class="qrow'+(i===0?' first':'')+'" style="width:100%;background:none;border:none;color:inherit;font:inherit;text-align:left'+(selectedId===m.id?';color:var(--amber)':'')+'" onclick="selectMember('+m.id+')">'+inner+'</button>';
+  };
+  colC+='<div class="panel"><div class="hd"><span>Next out · first on, first off</span></div><div class="bd">';
+  if(!queue.length) colC+='<div class="empty-note">No one seated.</div>';
+  else {
+    if(officerQ.length){
+      colC+='<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--faint);margin:2px 0 4px">STATION OFFICERS</div>';
+      colC+=officerQ.map(qRow).join("");
+    }
+    if(ffQ.length){
+      colC+='<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--faint);margin:'+(officerQ.length?'10px':'2px')+' 0 4px">FIREFIGHTERS</div>';
+      colC+=ffQ.map(qRow).join("");
+    }
+  }
+  colC+='</div></div>';
+
+  // Crewing suggestions: for each unfilled seat, who fits
+  const emptySeats = activeSeats().filter(s=>!occ[s.id]);
+  if(emptySeats.length){
+    colC+='<div class="panel"><div class="hd"><span>Crewing help · fill empty seats</span><span>'+emptySeats.length+'</span></div><div class="bd">';
+    emptySeats.forEach(seat=>{
+      const cands=candidatesForSeat(seat);
+      colC+='<div class="sug"><div class="sughd">'+seat.truckName+' · '+seat.label+'</div>';
+      if(!cands.length){
+        colC+='<div style="font-size:12px;color:var(--amber)">No available member fits this seat. Consider a holdback or reliever below.</div>';
+      } else {
+        colC+='<div class="opts">';
+        cands.slice(0,3).forEach((m,i)=>{
+          const off = m.shift!==state.shift ? ' · '+m.shift : '';
+          const tag = i===0 ? ' best' : '';
+          colC+='<button class="obtn sugbtn'+tag+'" onclick="seatMember('+m.id+',\''+seat.id+'\')">'+esc(m.name)+off+'</button>';
+        });
+        colC+='</div>';
+      }
+      colC+='</div>';
+    });
+    colC+='</div></div>';
+  }
+
+  colC+='<div class="panel"><div class="hd"><span>Shortfalls</span>'+(issues.length?'<span style="color:var(--red)">'+issues.length+' OPEN</span>':'')+'</div><div class="bd">';
+  if(!issues.length) colC+='<div style="color:var(--green);font-weight:700;font-size:14px">Shift requirements met. Board is clean.</div>';
+  // For each open need: split off-going members into holdback candidates (excess-hours OK)
+  // and excluded (would overrun their next rostered shift). Rank both lists by fairness:
+  // never-taken OT first (lastOT null), then oldest lastOT. Fall back to callback candidates
+  // when nobody can be legally held. All buttons go through the existing holdBack action so
+  // it stamps the tally and lets Undo restore the previous fairness position.
+  const projEndForHoldback = () => {
+    // Rough projection: assume the incoming shift's duration if held all the way through.
+    // Day 08–18, night 18–08. Add 10 hours to `now` as a first-pass proxy.
+    return nowMs() + 10*3600000;
+  };
+  const rankFairness = (a,b)=>{
+    const la = a.lastOT || 0, lb = b.lastOT || 0;
+    return la - lb; // 0 (never) first, then oldest
+  };
+  const noteFor = m => m.lastOT ? "last OT "+new Date(m.lastOT).toLocaleDateString([], {day:"2-digit",month:"short"}) : "no OT recorded";
+  const sop = currentShortageOrder(); // { platoon, shiftOfSet, order: [{platoon,action},...] } or null
+  issues.forEach(iss=>{
+    // Per-issue waterfall step: 0/1/2 into sop.order. Persists on state.shortageStep so
+    // stepping through survives re-render. Keyed by need+text so multiple issues track
+    // independently.
+    const stepKey = iss.need+"|"+iss.text;
+    state.shortageStep = state.shortageStep || {};
+    let step = state.shortageStep[stepKey] || 0;
+    const projEnd = projEndForHoldback();
+    const holdCandidatesAll = state.members.filter(m=>m.status==="out"&&coversNeed(m,iss.need));
+    const callCandidatesAll = state.members
+      .filter(m=>m.status==="off"&&m.avail==="Available"&&coversNeed(m,iss.need)&&!releasedFromActive(m));
+
+    colC+='<div class="issue"><div class="it">'+esc(iss.text)+'</div>';
+
+    if(sop){
+      // Show the SOP waterfall header
+      colC+='<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--faint);margin:4px 0 6px">SOP · '+esc(sop.platoon)+' PLATOON · '+esc(sop.shiftOfSet.toUpperCase())+' · OPS CIRCULAR 47/2016</div>';
+      colC+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:11px">';
+      sop.order.forEach((s,i)=>{
+        const active = i===step;
+        const label = s.platoon==="ASPSA" ? "ASPSA" : s.platoon+" "+s.action;
+        colC+='<span style="padding:3px 8px;border-radius:4px;font-weight:700;letter-spacing:.5px;'+(active?'background:var(--amber);color:#12161b':'background:var(--panel);color:var(--faint);border:1px solid var(--line)')+'">'+(i+1)+' · '+esc(label)+'</span>';
+      });
+      colC+='</div>';
+    }
+
+    const currentStep = sop ? sop.order[step] : null;
+    let shown=0, excludedThisStep=[];
+    colC+='<div class="opts">';
+
+    if(currentStep && currentStep.platoon==="ASPSA"){
+      // ASPSA: matrix exhausted — the SO's call is either super holdback (someone works
+      // through and gets released from their next shift) or truck offline. Prompt the
+      // decision inline rather than picking one automatically.
+      colC+='<div style="font-size:12px;color:var(--red);font-weight:700;margin:2px 0 6px">ASPSA — matrix exhausted. Super holdback or take the truck offline.</div>';
+      // Offer super holdback for members currently seated on the affected truck (or any
+      // seated member who covers the need if the truck can't be identified from need alone)
+      const seated = state.members.filter(m=>m.status==="on"&&m.seatId&&coversNeed(m,iss.need));
+      seated.sort(rankFairness);
+      seated.slice(0,3).forEach(m=>{
+        colC+='<button class="obtn hold" onclick="toggleOT('+m.id+',\'Super holdback\')" title="'+esc(noteFor(m))+'">Super holdback '+esc(m.name)+' <span style="font-weight:400;font-size:11px;opacity:.75">· '+esc(noteFor(m))+'</span></button>';
+      });
+      // Offline options: needs a truck. Infer from need if possible.
+      const truckHint = iss.text.match(/PERTH 1ST|PERTH 2ND|CLP|VR/i);
+      const truckHTML = TRUCKS.filter(t=>!truckOffline(t.id)).map(t=>'<button class="obtn" onclick="toggleTruckOffline(\''+t.id+'\')">Take '+esc(t.name)+' OFFLINE</button>').join("");
+      colC+= truckHTML;
+    } else if(currentStep){
+      const platoon = currentStep.platoon;
+      const action = currentStep.action;
+      // Filter to the current platoon; ranks by fairness within the platoon.
+      if(action==="Hold Back"){
+        const step_holds = holdCandidatesAll.filter(m=>m.shift===platoon);
+        step_holds.forEach(m=>{
+          const h=canHoldBack(m,projEnd);
+          if(h.ok){
+            colC+='<button class="obtn hold" onclick="holdBack('+m.id+',\''+iss.need+'\')" title="'+esc(noteFor(m))+'">Hold back '+esc(m.name)+' ('+esc(platoon)+') <span style="font-weight:400;font-size:11px;opacity:.75">· '+esc(noteFor(m))+'</span></button>';
+            shown++;
+          } else {
+            excludedThisStep.push(m);
+          }
+        });
+        step_holds.sort(rankFairness);
+      } else if(action==="Call Back"){
+        const step_calls = callCandidatesAll.filter(m=>m.shift===platoon).sort(rankFairness);
+        step_calls.slice(0,4).forEach(m=>{
+          colC+='<button class="obtn" onclick="callBack('+m.id+')" title="'+esc(noteFor(m))+'">Call back '+esc(m.name)+' ('+esc(platoon)+') <span style="font-weight:400;font-size:11px;opacity:.75">· '+esc(noteFor(m))+'</span></button>';
+          shown++;
+        });
+      }
+      // Escalate button steps the waterfall forward
+      if(step < (sop?sop.order.length-1:0)){
+        colC+='<button class="obtn" style="border-color:var(--amber);color:var(--amber)" onclick="escalateShortage(\''+esc(stepKey)+'\')">Escalate → '+(sop.order[step+1].platoon==="ASPSA"?"ASPSA":sop.order[step+1].platoon+" "+sop.order[step+1].action)+'</button>';
+      }
+    } else {
+      // No SOP for this moment (shouldn't happen when a platoon is on duty) — fall back to
+      // the pre-SOP behaviour: all holdback + fair callbacks.
+      const okAll=[], excludedAll=[];
+      holdCandidatesAll.forEach(m=>{ const h=canHoldBack(m,projEnd); (h.ok?okAll:excludedAll).push(m); });
+      okAll.sort(rankFairness);
+      okAll.forEach(m=>{
+        colC+='<button class="obtn hold" onclick="holdBack('+m.id+',\''+iss.need+'\')" title="'+esc(noteFor(m))+'">Hold back '+esc(m.name)+' <span style="font-weight:400;font-size:11px;opacity:.75">· '+esc(noteFor(m))+'</span></button>';
+        shown++;
+      });
+      callCandidatesAll.sort(rankFairness).slice(0,4).forEach(m=>{
+        colC+='<button class="obtn" onclick="callBack('+m.id+')" title="'+esc(noteFor(m))+'">Call back '+esc(m.name)+' ('+esc(m.shift)+') <span style="font-weight:400;font-size:11px;opacity:.75">· '+esc(noteFor(m))+'</span></button>';
+        shown++;
+      });
+      excludedThisStep.push(...excludedAll);
+    }
+    colC+='<button class="obtn rel" onclick="requestReliever(\''+iss.need+'\')">Request reliever</button>';
+    colC+='</div>';
+    if(excludedThisStep.length){
+      colC+='<div style="font-size:11px;color:var(--amber);margin-top:6px">Cannot hold back (would overrun next rostered shift): '+excludedThisStep.map(m=>esc(m.name)).join(", ")+' \u2014 escalate to next relief.</div>';
+    }
+    if(!shown && (!currentStep || currentStep.platoon!=="ASPSA")){
+      colC+='<div style="font-size:11px;color:var(--dim);margin-top:6px">No candidates from '+(currentStep?esc(currentStep.platoon)+' platoon':"any shift")+'. Escalate to the next relief.</div>';
+    }
+    colC+='</div>';
+  });
+  if(state.relieverReqs.length){
+    colC+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+state.relieverReqs.map((r,i)=>'<button class="tag q" style="font-size:11px;cursor:pointer;background:none" title="Tap to clear" onclick="dismissRelieverReq('+i+')">Reliever requested · '+esc(r.need)+' · '+fmt(r.at)+' ✕</button>').join("")+'</div>';
+  }
+  colC+='</div></div>';
+
+  // Holdbacks / Callbacks / OT
+  const hb = state.members.filter(m=>m.status==="on" && (m.ot||m.excHours));
+  colC+='<div class="panel"><div class="hd"><span>OT &amp; standby swaps</span>'+(hb.length?'<span>'+hb.length+'</span>':'')+'</div><div class="bd">';
+  if(!hb.length) colC+='<div class="empty-note">No one on OT or a standby swap. Off-shift arrivals are auto-flagged from board state, not the clock: Holdback if still on from the shift that just came off, Callback if they fill an empty seat or release a holdback (called in to fix a shortfall, whatever the time), Standby if they relieve someone on an otherwise-covered board (pre-arranged swap, not OT). External relievers get no flag. Select a member to change any flag.</div>';
+  hb.forEach(m=>{
+    const where = m.seatId ? seatById(m.seatId).truckName+" "+seatById(m.seatId).label : "standby";
+    const home = m.shift!==active ? " · "+m.shift+" shift" : "";
+    colC+='<div class="hbrow"><div><b>'+esc(m.name)+'</b> <span class="sbsub">'+where+home+'</span>'+
+      (m.ot==="Holdback"?'<div style="font-size:12px;color:var(--amber);font-weight:700">Holdback · OT</div>':'')+
+      (m.ot==="Super holdback"?'<div style="font-size:12px;color:var(--red);font-weight:800">SUPER HOLDBACK · working through, released from next rostered shift'+(m.superHBKey?' ('+esc(m.superHBKey)+')':'')+'</div>':'')+
+      (m.ot==="Callback"?'<div style="font-size:12px;color:var(--amber);font-weight:700">Callback · OT</div>':'')+
+      (m.ot==="Standby"?(function(){
+        let sbLine='<div style="font-size:12px;color:var(--green);font-weight:700">Standby · shift-for-shift swap, not OT</div>';
+        if(m.coveringFor){
+          const cv=state.members.find(x=>x.id===m.coveringFor);
+          if(cv){
+            const stat = cv.avail!=="Available" ? " · "+cv.avail : "";
+            sbLine+='<div style="margin-top:4px;font-size:12px">Covering <b>'+esc(cv.name)+'</b> ('+esc(cv.shift)+' shift'+esc(stat)+') · '+esc(cv.name)+' owes '+esc(m.name)+' one <span class="sbbadge pos">ledger ✓</span> <button class="obtn" onclick="setCoveringFor('+m.id+',0)" style="border-color:var(--faint);color:var(--dim);margin-left:4px">clear</button></div>';
+          }
+        } else {
+          let opts='<option value="">Covering for\u2026</option>';
+          SHIFTS.forEach(sh=>{
+            const g=state.members.filter(x=>x.shift===sh && x.id!==m.id).sort((a,b)=>a.name.localeCompare(b.name));
+            if(!g.length) return;
+            opts+='<optgroup label="'+sh+' shift">';
+            g.forEach(x=>{ const stat=x.avail!=="Available"?" · "+x.avail:""; opts+='<option value="'+x.id+'">'+esc(x.name)+esc(stat)+'</option>'; });
+            opts+='</optgroup>';
+          });
+          sbLine+='<div style="margin-top:4px"><select class="searchbox" style="margin:0;font-size:12px;padding:4px 6px" onchange="setCoveringFor('+m.id+',this.value)">'+opts+'</select></div>';
+        }
+        return sbLine;
+      })():'')+
+      (m.excHours?'<div style="font-size:12px;color:var(--blue);font-weight:700">Excessive hours · excused next night shift, still paid</div>':'')+
+      '</div></div>';
+  });
+  colC+='</div></div>';
+
+  // Shift message
+  if(showShiftMsg){
+    colC+='<div class="panel"><div class="hd"><span>Shift message</span><button class="offbtn" onclick="toggleShiftMsg()">Close</button></div><div class="bd">';
+    colC+='<textarea class="msgbox" readonly onclick="this.select()">'+esc(generateShiftMessage(state.members))+'</textarea>';
+    colC+='<div style="display:flex;gap:8px;margin-top:8px"><button class="ctl warn" onclick="copyShiftMsg()">Copy</button><button class="ctl" onclick="toggleShiftMsg()">Done</button></div>';
+    colC+='<div class="note" style="margin-top:8px">Auto-built from the current board. Paste into your shift channel. The relieving line hands off to the relieving tracker for who actually gets sent out.</div>';
+    colC+='</div></div>';
+  }
+
+  colC+='<div class="panel"><div class="hd"><span>Board controls</span></div><div class="bd">';
+  colC+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  colC+='<button class="ctl warn" onclick="toggleShiftMsg()">Shift message</button>';
+  colC+='<button class="ctl" onclick="window.print()">Print / handover</button>';
+  colC+= rehearsal
+    ? '<button class="ctl warn" onclick="exitRehearsal()">Exit rehearsal</button>'
+    : '<button class="ctl" onclick="enterRehearsal()" title="Play through a shift changeover without saving anything">Rehearse changeover</button>';
+  if(!rehearsal){
+    colC+='<button class="ctl" onclick="clearBoard()" title="Clear on-duty state for a new shift. Keeps roster, tags, forecast notes.">New shift</button>';
+    colC+='<button class="ctl" onclick="exportJSON()">Export backup</button>';
+    colC+='<label class="ctl" style="display:inline-flex;align-items:center">Import<input type="file" accept="application/json" style="display:none" onchange="importJSON(event)"></label>';
+    colC+='<button class="ctl danger" onclick="fullReset()">Full reset</button>';
+  }
+  colC+='</div>';
+  colC+='<div class="note">Runs on this device only — Export before clearing browser data. Concept demonstrator.</div>';
+  colC+='</div></div></div>';
+
+  document.getElementById("view-board").innerHTML=colA+colB+colC;
+}
+
+function selectMember(id){ selectedId = (selectedId===id?null:id); render(); }
+
+function renderForecast(){
+  const target = forecastTarget || defaultForecastTarget();
+  const iso = target.iso, phase = target.phase;
+  const platoon = forecastPlatoon(iso, phase);
+  const sos = forecastShiftOfSet(iso, phase) || "";
+  const startMs = forecastShiftStartMs(iso, phase);
+  const targetD = new Date(startMs);
+  const dateLbl = targetD.toLocaleDateString([], {weekday:"long", day:"2-digit", month:"short", year:"numeric"});
+
+  // Members rostered for this shift + who is projected off (with reason).
+  const rostered = state.members.filter(m => m.shift===platoon);
+  const projected = rostered.map(m => {
+    const reason = forecastUnavailableReason(m, startMs);
+    return { m, reason };
+  });
+  const available = projected.filter(x => !x.reason);
+  const unavailable = projected.filter(x =>  x.reason);
+  const holdbackNotes = state.members.filter(m => m.forecastHoldback);
+
+  // Rough shortfall check: count how many members can cover each need vs. requirement.
+  const need = k => available.filter(x => coversNeed(x.m, k)).length;
+  const rows = [
+    ["SO seats (2)",         2, available.filter(x => x.m.rank==="SO").length],
+    ["CLP holders (2)",      2, need("CLP")],
+    ["VR holders (6)",       6, need("VR")],
+    ["Total available",     10, available.length]
+  ];
+
+  // The SOP order for this forecast target.
+  const sopFC = forecastShortageOrder(iso, phase);
+  const noteFor = m => m.lastOT ? "last OT "+new Date(m.lastOT).toLocaleDateString([], {day:"2-digit",month:"short"}) : "no OT recorded";
+
+  let h = '<div style="max-width:1200px;margin:0 auto;padding:16px 20px">';
+  h += '<div style="font-size:11px;font-weight:800;letter-spacing:2px;color:var(--faint);margin-bottom:6px">FORECAST · WHAT DOES THE NEXT SHIFT LOOK LIKE</div>';
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px">';
+  h += '<input type="date" value="'+esc(iso)+'" onchange="forecastTarget={iso:this.value,phase:\''+esc(phase)+'\'};render()" style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-family:inherit;font-weight:700">';
+  h += '<span style="display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden">';
+  h += '<button class="ctl'+(phase==="Day"?" warn":"")+'" style="border-radius:0;border:0" onclick="forecastTarget={iso:\''+esc(iso)+'\',phase:\'Day\'};render()">Day</button>';
+  h += '<button class="ctl'+(phase==="Night"?" warn":"")+'" style="border-radius:0;border:0;border-left:1px solid var(--line)" onclick="forecastTarget={iso:\''+esc(iso)+'\',phase:\'Night\'};render()">Night</button>';
+  h += '</span>';
+  h += '<button class="ctl" onclick="forecastTarget=null;render()">Reset to next shift</button>';
+  const expOffCount = state.members.filter(m=>m.expectedOff).length;
+  if(expOffCount) h += '<button class="ctl warn" onclick="clearAllExpectedOff()">Clear all Expected off ('+expOffCount+')</button>';
+  h += '<span style="color:var(--dim);font-size:13px">'+esc(dateLbl)+' · <b style="color:var(--text)">'+esc(platoon)+' PLATOON</b> · '+esc(sos.toUpperCase()||"?")+'</span>';
+  h += '</div>';
+
+  // Roster panel
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+  h += '<div class="panel"><div class="hd"><span>Rostered available ('+available.length+')</span></div><div class="bd">';
+  if(!available.length) h += '<div class="empty-note">Nobody projected available. Check the platoon on cycle for this date.</div>';
+  else available.forEach(({m}) => {
+    const hbNote = m.forecastHoldback ? '<span style="color:var(--amber);font-size:11px;font-weight:700;letter-spacing:1px;margin-left:6px">HB · '+esc(m.forecastHoldback)+'</span>' : '';
+    h += '<div class="qrow"><span>'+esc(m.name)+hbNote+'</span>'+tagsHTML(m, platoon)+'</div>';
+    h += '<div style="padding:4px 0 10px 0;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--line);margin-bottom:6px;flex-wrap:wrap">'+
+         '<input type="text" value="'+esc(m.forecastHoldback||"")+'" placeholder="Forecast HB note (e.g. holding till 22:00)" onchange="setForecastHoldback('+m.id+',this.value)" style="flex:1;min-width:180px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font-family:inherit;font-size:12px">'+
+         '<button class="ctl" style="font-size:11px;padding:3px 8px" onclick="toggleExpectedOff('+m.id+',prompt(\'Reason booked off (PSL, carer\\\'s, late etc)?\',\'PSL\')||\'\')">Booked off (PSL etc)</button>'+
+         (m.forecastHoldback ? '<button class="ctl" style="font-size:11px;padding:3px 8px" onclick="setForecastHoldback('+m.id+',\'\')">Clear HB</button>' : '')+
+         '</div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="panel"><div class="hd"><span>Projected off ('+unavailable.length+')</span></div><div class="bd">';
+  if(!unavailable.length) h += '<div class="empty-note">Everyone on this shift is projected available.</div>';
+  else unavailable.forEach(({m, reason}) => {
+    const clearBtn = m.expectedOff ? '<button class="ctl" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="toggleExpectedOff('+m.id+')">Clear</button>' : '';
+    h += '<div class="qrow"><span>'+esc(m.name)+'</span><span style="color:var(--amber);font-size:12px">'+esc(reason)+clearBtn+'</span></div>';
+  });
+  h += '</div></div>';
+  h += '</div>';
+
+  // Coverage panel — qual-aware rows + the authoritative crew-solve feasibility answer.
+  const fcCov = forecastCoverage(iso, phase);
+  const feas = forecastFeasibility(iso, phase);
+  h += '<div class="panel" style="margin-top:16px"><div class="hd"><span>Coverage check</span></div><div class="bd">';
+  h += '<div style="display:flex;gap:14px;flex-wrap:wrap">';
+  fcCov.rows.forEach(r => {
+    const ok = r.key==="VR" ? fcCov.vrB.met : r.have >= r.req;
+    h += '<div class="chip '+(ok?"ok":"bad")+'"><span class="lbl">'+esc(r.label)+'</span><span class="val">'+r.have+'<span class="of">/'+r.req+'</span></span></div>';
+  });
+  h += '</div>';
+  if(feas.ok){
+    h += '<div style="margin-top:12px;padding:10px 12px;background:var(--panel);border-left:3px solid var(--green);border-radius:5px;font-size:13px;color:var(--green);font-weight:700">A fully legal board can be built from the projected crew. No holdback needed on current information.</div>';
+  } else {
+    h += '<div style="margin-top:12px;padding:10px 12px;background:var(--panel);border-left:3px solid var(--red);border-radius:5px;font-size:13px"><b style="color:var(--red)">HOLDBACK / CALLBACK NEEDED — required: </b>'+feas.missing.map(esc).join("; ")+'.<br><span style="color:var(--dim);font-size:12px">The off-going crew\'s holdback (or a callback per the SOP below) must hold the qualification named, or the next shift starts down.</span></div>';
+  }
+  h += '</div></div>';
+
+  // SOP matrix hint for this shift + fairness-ranked candidates for holdback / callback
+  if(sopFC){
+    h += '<div class="panel" style="margin-top:16px"><div class="hd"><span>SOP matrix · '+esc(platoon)+' PLATOON · '+esc(sos.toUpperCase())+'</span></div><div class="bd">';
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;font-size:12px">';
+    sopFC.order.forEach((s, i) => {
+      const label = s.platoon==="ASPSA" ? "ASPSA" : s.platoon+" "+s.action;
+      h += '<span style="padding:4px 10px;border-radius:4px;font-weight:700;letter-spacing:.5px;background:var(--panel);color:var(--dim);border:1px solid var(--line)">'+(i+1)+' · '+esc(label)+'</span>';
+    });
+    h += '</div>';
+    // Deliberately NO named candidates here. A forecast designates what's REQUIRED —
+    // the quals and which platoon per SOP — never who. Naming people days ahead reads
+    // as pre-assigning overtime that hasn't been offered; the who is decided live, on
+    // the day, on the Shortfalls panel with the fairness order.
+    if(!feas.ok){
+      h += '<div style="font-size:13px;color:var(--dim);margin-bottom:6px">Required to cover the projected gap: <b style="color:var(--text)">'+feas.missing.map(esc).join("; ")+'</b>. Source per SOP order above — who goes is decided on the day.</div>';
+    } else {
+      h += '<div style="font-size:12px;color:var(--faint)">No projected gap. The order above applies only if a shortfall emerges.</div>';
+    }
+    h += '</div></div>';
+  }
+
+  // Forecast holdback summary (if any)
+  if(holdbackNotes.length){
+    h += '<div class="panel" style="margin-top:16px"><div class="hd"><span>All forecast holdbacks</span><span>'+holdbackNotes.length+'</span></div><div class="bd">';
+    h += '<div class="note" style="margin-bottom:8px">These appear on the live board when their shift becomes current, so the SO knows to release them first.</div>';
+    holdbackNotes.forEach(m => {
+      h += '<div class="qrow"><span><b>'+esc(m.name)+'</b> ('+esc(m.shift)+') · '+esc(m.forecastHoldback)+'</span><button class="ctl" style="font-size:11px;padding:3px 8px" onclick="setForecastHoldback('+m.id+',\'\')">Clear</button></div>';
+    });
+    h += '</div></div>';
+  }
+
+  h += '<div class="note" style="margin-top:20px">Forecast is a preview only. Nothing here changes the live board or the roster — flip the actual availability in the Roster tab if a leave/relief block is coming up. Forecast holdback notes persist until cleared or the board is cleared for a new shift.</div>';
+  h += '</div>';
+  document.getElementById("view-forecast").innerHTML = h;
+}
+
+
+// ============ SAMS day-sheet paste importer ============
+// Parses a copy-paste of the SAMS rostered/on-shift table and maps each row to a roster
+// member and an availability status. PRIVACY: staff numbers and overtime claim / relief
+// payment receipt numbers appear in the paste; they are parsed PAST and never stored,
+// previewed, or exported — the board carries paper-duty-board information only.
+let samsPreview = null; // { rows:[{name, matchedId, matchedName, code, newStatus, note}], skipped:[...] }
+const SAMS_CODE_MAP = {
+  "AL":"Annual leave", "LSL":"LSL", "PSL":"Sick", "SICK":"Sick",
+  "REL":"Relieving out",
+  "P":"Available", "P(REL)":"Available", "ACT":"Available", "HB":"Available"
+};
+// Precedence when the same person appears in multiple rows (e.g. present here as a
+// reliever AND posted out at their substantive): being present here wins.
+const SAMS_CODE_RANK = { "P":0, "P(REL)":0, "HB":0, "ACT":1, "PSL":2, "SICK":2, "AL":3, "LSL":3, "REL":4 };
+function parseSAMSPaste(text){
+  const rows = [], skipped = [];
+  const seen = {}; // surname+initial -> row index in rows (for precedence)
+  text.split(/\r?\n/).forEach(line => {
+    const t = line.trim();
+    if(!t) return;
+    if(/^Rostered|^\s*Name\s|^Submitted by|^Last edited|^Special Relief/i.test(t)){ 
+      if(/^Special Relief/i.test(t)) skipped.push({line:t, why:"note (shown, not imported)"});
+      return; 
+    }
+    if(/^vacant\b/i.test(t)){ return; } // vacant positions carry nothing for the board
+    const cols = line.split("\t").map(c=>c.trim());
+    if(cols.length < 4) { skipped.push({line:t.slice(0,60), why:"unrecognised line"}); return; }
+    // Name cell: "Surname, First Middle (RANK)(Class)" — take surname + first initial.
+    const nameCell = cols[0];
+    const nm = nameCell.match(/^([^,]+),\s*([A-Za-z])/);
+    if(!nm){ skipped.push({line:t.slice(0,60), why:"no parsable name"}); return; }
+    const surname = nm[1].trim(), initial = nm[2].toUpperCase();
+    // Rank tags for info only (matching is by name; the board already knows ranks)
+    const isDO = /\(DO\)/.test(nameCell);
+    // Code: SAMS puts it in column 3 (after staff# and start time). Guard against column
+    // drift by searching the first several cells for a known code.
+    let code = null;
+    for(let i=2;i<Math.min(cols.length,6);i++){
+      const c = cols[i].toUpperCase();
+      if(SAMS_CODE_MAP[c] !== undefined){ code = c; break; }
+    }
+    if(!code){ skipped.push({line:surname+", "+initial+".", why:"no status code found"}); return; }
+    if(isDO){ skipped.push({line:surname+", "+initial+". (DO)", why:"District Officer — not on the station board"}); return; }
+    const key = surname.toLowerCase()+"|"+initial;
+    const newStatus = SAMS_CODE_MAP[code];
+    // Match against the roster: surname + first initial (board names are "Surname, I.")
+    const member = state.members.find(m => {
+      const mm = m.name.match(/^([^,]+),\s*([A-Za-z])/);
+      return mm && mm[1].trim().toLowerCase()===surname.toLowerCase() && mm[2].toUpperCase()===initial;
+    });
+    const row = {
+      name: surname+", "+initial+".",
+      matchedId: member ? member.id : null,
+      matchedName: member ? member.name : null,
+      currentStatus: member ? member.avail : null,
+      code, newStatus,
+      note: code==="HB" ? "holdback on the sheet — flag OT on the board separately" : (code==="REL" ? "posted out relieving" : "")
+    };
+    if(key in seen){
+      // precedence: keep whichever row ranks lower (more "present here")
+      const prior = rows[seen[key]];
+      if((SAMS_CODE_RANK[code] ?? 9) < (SAMS_CODE_RANK[prior.code] ?? 9)) rows[seen[key]] = row;
+    } else {
+      seen[key] = rows.length;
+      rows.push(row);
+    }
+  });
+  return { rows, skipped };
+}
+function samsParseAction(){
+  const ta = document.getElementById("samsPaste");
+  if(!ta || !ta.value.trim()){ say("Paste the SAMS table into the box first.","warn"); return; }
+  samsPreview = parseSAMSPaste(ta.value);
+  const matched = samsPreview.rows.filter(r=>r.matchedId).length;
+  say("Parsed "+samsPreview.rows.length+" people ("+matched+" matched to the roster). Review below, then Apply.","info");
+  render();
+}
+function samsApplyAction(){
+  if(!samsPreview) return;
+  let changed = 0;
+  samsPreview.rows.forEach(r => {
+    if(!r.matchedId) return;
+    const m = state.members.find(x=>x.id===r.matchedId);
+    if(m && m.avail !== r.newStatus){ m.avail = r.newStatus; changed++; }
+  });
+  say("SAMS import applied — "+changed+" status"+(changed===1?"":"es")+" updated. Staff numbers and claim numbers were discarded, not stored.","ok");
+  samsPreview = null;
+  commit();
+}
+function samsCancelAction(){ samsPreview = null; render(); }
+
+function renderRoster(){
+  let h='<div class="col" style="grid-column:1/-1;max-width:900px">';
+  h+='<div class="panel"><div class="hd"><span>Roster · availability, shift &amp; tags</span></div><div class="bd">';
+  h+='<input class="searchbox" placeholder="Search the roster…" value="'+esc(rosterQuery)+'" oninput="setRosterQuery(this.value)">';
+  // SAMS paste importer
+  // OT order tracker — the readable version of the fairness tally that already drives the
+  // Shortfalls candidate ordering. Longest-without-OT (or never) at the top of each list.
+  // Officers and firefighters are separate orders (officers only relieve officers).
+  h+='<details style="margin:10px 0"><summary style="cursor:pointer;font-weight:700;color:var(--amber);font-size:13px">OT order · who\'s top of the callback/holdback list</summary>';
+  h+='<div class="note" style="margin:8px 0 6px">Ranked by last overtime done (any Holdback, Callback or Super holdback stamps the date). Never-done stays on top until they take one. This is the order the Shortfalls panel already uses — shown here so the crew can see it\'s fair.</div>';
+  const otFmt = m => m.lastOT ? new Date(m.lastOT).toLocaleDateString([], {day:"2-digit",month:"short",year:"2-digit"}) : "never";
+  const otSort = (a,b) => (a.lastOT||0)-(b.lastOT||0) || a.name.localeCompare(b.name);
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">';
+  SHIFTS.forEach(sh=>{
+    const grp = state.members.filter(m=>m.shift===sh && !m.ext);
+    const sos = grp.filter(m=>isOfficer(m)).sort(otSort);
+    const ffs = grp.filter(m=>!isOfficer(m)).sort(otSort);
+    h+='<div style="border:1px solid var(--line);border-radius:6px;padding:8px 10px"><div style="font-weight:800;letter-spacing:1px;font-size:12px;margin-bottom:6px">'+sh+' PLATOON</div>';
+    if(sos.length){
+      h+='<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--faint);margin-bottom:3px">OFFICERS</div>';
+      sos.forEach((m,i)=>{ h+='<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0'+(i===0?';color:var(--green);font-weight:700':'')+'"><span>'+(i+1)+'. '+esc(m.name)+'</span><span>'+esc(otFmt(m))+'</span></div>'; });
+    }
+    if(ffs.length){
+      h+='<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:var(--faint);margin:6px 0 3px">FIREFIGHTERS</div>';
+      ffs.forEach((m,i)=>{ h+='<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0'+(i===0?';color:var(--green);font-weight:700':'')+'"><span>'+(i+1)+'. '+esc(m.name)+'</span><span>'+esc(otFmt(m))+'</span></div>'; });
+    }
+    h+='</div>';
+  });
+  h+='</div></details>';
+  h+='<details style="margin:10px 0"><summary style="cursor:pointer;font-weight:700;color:var(--amber);font-size:13px">Import from SAMS (paste the day sheet)</summary>';
+  h+='<div class="note" style="margin:8px 0 6px">Select the SAMS rostered/on-shift table, copy, paste here. Names are matched by surname + initial; leave codes (AL, LSL, PSL, REL, P) become roster statuses. Staff numbers and OT claim/receipt numbers in the paste are discarded — never stored.</div>';
+  h+='<textarea id="samsPaste" style="width:100%;min-height:90px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px;font-family:inherit;font-size:12px" placeholder="Paste the SAMS table here…"></textarea>';
+  h+='<div style="display:flex;gap:8px;margin-top:6px"><button class="ctl warn" onclick="samsParseAction()">Parse</button>'+(samsPreview?'<button class="ctl" style="border-color:var(--green);color:var(--green)" onclick="samsApplyAction()">Apply '+samsPreview.rows.filter(r=>r.matchedId).length+' matched</button><button class="ctl" onclick="samsCancelAction()">Discard</button>':'')+'</div>';
+  if(samsPreview){
+    h+='<div style="margin-top:8px;border:1px solid var(--line);border-radius:6px;overflow:hidden">';
+    samsPreview.rows.forEach(r=>{
+      const chg = r.matchedId && r.currentStatus!==r.newStatus;
+      h+='<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 10px;border-bottom:1px solid var(--line);font-size:12px;'+(r.matchedId?'':'opacity:.5')+'">';
+      h+='<span>'+esc(r.name)+(r.matchedId?'':' — <i>not on roster, skipped</i>')+'</span>';
+      h+='<span>'+esc(r.code)+' → <b style="color:'+(chg?'var(--amber)':'var(--dim)')+'">'+esc(r.newStatus)+'</b>'+(chg?'':' (no change)')+(r.note?' · <span style="color:var(--faint)">'+esc(r.note)+'</span>':'')+'</span></div>';
+    });
+    if(samsPreview.skipped.length){
+      h+='<div style="padding:5px 10px;font-size:11px;color:var(--faint)">Skipped: '+samsPreview.skipped.map(x=>esc(x.line)+" ("+esc(x.why)+")").join(" · ")+'</div>';
+    }
+    h+='</div>';
+  }
+  h+='</details>';
+  h+='<div class="note" style="margin:0 0 12px">TOPO has no formal qual and mirrors the physical board, so everyone starts off: toggle the actual topo drivers on. STRIPE = 1st or 2nd Class. SNAPs are the Station Officers and are counted by rank automatically. Everything saves to this device.</div>';
+  const rq=rosterQuery.trim().toLowerCase();
+  const rmatch=m=>!rq||m.name.toLowerCase().includes(rq);
+  SHIFTS.forEach(sh=>{
+    const group=state.members.filter(m=>m.shift===sh&&rmatch(m));
+    if(!group.length) return;
+    h+='<div class="shifthdr">'+sh+' SHIFT</div>';
+    group.forEach(m=>{
+      h+='<div class="rmember"><div class="rtop"><div><span class="rname">'+esc(m.name)+'</span> <span class="rrank">'+esc(m.rank==="FF"?(m.cls||"FF"):m.rank)+(m.note?' · '+esc(m.note):'')+'</span><div class="rrank" style="margin-top:2px">'+esc(displayQuals(m).join(", ")||"\u2014")+'</div>'+((m.superHBReleased&&m.superHBReleased.length)?'<div class="rrank" style="margin-top:2px;color:var(--amber)">Released from '+m.superHBReleased.map(k=>esc(k)).join(", ")+' (super holdback)</div>':'')+(m.avail==="Relieving out"&&m.relievingOutUntil?'<div class="rrank" style="margin-top:2px;color:var(--amber)">Away until '+esc(new Date(m.relievingOutUntil).toLocaleDateString([], {day:"2-digit",month:"short"}))+' · relieving out</div>':'')+'</div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      h+='<select onchange="setShift('+m.id+',this.value)">'+SHIFTS.map(s=>'<option'+(m.shift===s?' selected':'')+'>'+s+'</option>').join("")+'</select>';
+      h+='<select onchange="setAvail('+m.id+',this.value)">'+STATUSES.map(s=>'<option'+(m.avail===s?' selected':'')+'>'+s+'</option>').join("")+'</select>';
+      h+='</div></div>';
+      h+='<div class="togs">';
+      if(m.rank!=="SO") h+='<button class="tog'+(m.rank==="SFF"?" on":"")+'" onclick="toggleSenior('+m.id+')">SENIOR</button>';
+      [["topo","TOPO"],["stripe","STRIPE"],["clp","CLP"],["vr","VR"],["csr","CSR"],["rrs","RRS"],["reliever","RELIEVER"]].forEach(([k,l])=>{
+        h+='<button class="tog'+(m[k]?" on":"")+'" onclick="toggleTag('+m.id+',\''+k+'\')">'+l+'</button>';
+      });
+      h+='</div>';
+      h+='<input class="noteinput" placeholder="Acting as / note (e.g. Acting DO, Academy instructor)" value="'+esc(m.note||"")+'" onchange="setNote('+m.id+',this.value)">';
+      h+='</div>';
+    });
+  });
+  const rels = state.members.filter(m=>m.ext&&rmatch(m));
+  if(rels.length){
+    h+='<div class="shifthdr">EXTERNAL RELIEVERS</div>';
+    rels.forEach(m=>{
+      h+='<div class="rmember"><div class="rtop"><div><span class="rname">'+esc(m.name)+'</span> <span class="rrank">'+esc(m.rank==="FF"?(m.cls||"Reliever"):m.rank)+' · from another station</span></div>';
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      h+='<select onchange="setAvail('+m.id+',this.value)">'+STATUSES.map(s=>'<option'+(m.avail===s?' selected':'')+'>'+s+'</option>').join("")+'</select>';
+      h+='<button class="ctl danger" onclick="removeReliever('+m.id+')">Remove</button>';
+      h+='</div></div>';
+      h+='<div class="togs">';
+      if(m.rank!=="SO") h+='<button class="tog'+(m.rank==="SFF"?" on":"")+'" onclick="toggleSenior('+m.id+')">SENIOR</button>';
+      [["topo","TOPO"],["stripe","STRIPE"],["clp","CLP"],["vr","VR"],["csr","CSR"],["rrs","RRS"]].forEach(([k,l])=>{
+        h+='<button class="tog'+(m[k]?" on":"")+'" onclick="toggleTag('+m.id+',\''+k+'\')">'+l+'</button>';
+      });
+      h+='</div></div>';
+    });
+  }
+  h+='</div></div></div>';
+  document.getElementById("view-roster").innerHTML=h;
+}
+
+function renderStandbys(){
+  let h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;grid-column:1/-1">';
+
+  // TOP: quick log (full width)
+  h+='<div class="col" style="grid-column:1/-1"><div class="panel"><div class="hd"><span>Log a standby</span></div><div class="bd">';
+  h+='<div class="qlog">';
+  h+='<label>Your name<select onchange="qSet(\'self\',this.value)"><option value="">Select…</option>'+
+     SHIFTS.map(sh=>{ const g=state.members.filter(m=>m.shift===sh).sort((a,b)=>a.name.localeCompare(b.name)); return g.length?('<optgroup label="'+sh+' shift">'+g.map(m=>'<option value="'+m.id+'"'+(String(qSelf)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>').join("")+'</optgroup>'):""; }).join("")+
+     '</select></label>';
+  h+='<label>What happened<div class="segbtns">'+
+     '<button class="tog'+(qDir==="byme"?" on":"")+'" onclick="qSet(\'dir\',\'byme\')">I did a standby for someone</button>'+
+     '<button class="tog'+(qDir==="forme"?" on":"")+'" onclick="qSet(\'dir\',\'forme\')">Someone did a standby for me</button>'+
+     '</div></label>';
+  h+='<label>Who with<div class="segbtns">'+
+     '<button class="tog'+(qMode==="member"?" on":"")+'" onclick="qSet(\'mode\',\'member\')">Perth member</button>'+
+     '<button class="tog'+(qMode==="ext"?" on":"")+'" onclick="qSet(\'mode\',\'ext\')">Another station</button>'+
+     '</div></label>';
+  if(qMode==="member"){
+    h+='<label>Member<select onchange="qSet(\'pick\',this.value)"><option value="">Select…</option>'+
+       SHIFTS.map(sh=>{ const g=state.members.filter(m=>m.shift===sh&&String(m.id)!==String(qSelf)).sort((a,b)=>a.name.localeCompare(b.name)); return g.length?('<optgroup label="'+sh+' shift">'+g.map(m=>'<option value="'+m.id+'"'+(String(qPick)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>').join("")+'</optgroup>'):""; }).join("")+
+       '</select></label>';
+  } else {
+    h+='<label>Their name<input type="text" placeholder="e.g. Bain" value="'+esc(qName)+'" onchange="qSet(\'name\',this.value)"></label>';
+    h+='<label>Station<input type="text" placeholder="e.g. Ellenbrook" value="'+esc(qStn)+'" onchange="qSet(\'stn\',this.value)"></label>';
+  }
+  h+='<button class="ctl warn" onclick="quickLog()">Log standby</button>';
+  h+='</div>';
+  h+='<div class="note" style="margin-top:8px">"I did a standby for someone" means they now owe you one. "Someone did a standby for me" means you owe them. Use Another station to write in anyone not on the Perth roster.</div>';
+  h+='</div></div></div>';
+
+  // LEFT: clickable list of Perth members + external parties, with open-standby badges
+  const q=sbQuery.trim().toLowerCase();
+  h+='<div class="col">';
+  h+='<div class="panel"><div class="hd"><span>Standby ledger · pick a name</span></div><div class="bd">';
+  h+='<input class="searchbox" placeholder="Search a name…" value="'+esc(sbQuery)+'" oninput="setSbQuery(this.value)">';
+  const groups = SHIFTS.map(sh=>({label:sh+" shift", rows:state.members.filter(m=>m.shift===sh).map(m=>({key:"m:"+m.id, label:m.name, sub:m.shift}))}))
+    .concat([{label:"External relievers on the board", rows:state.members.filter(m=>m.ext).map(m=>({key:"m:"+m.id, label:m.name, sub:"reliever"}))}]);
+  // external parties that only exist in the ledger (other stations)
+  const extSeen=new Map();
+  state.standbys.forEach(s=>{ [s.coverer,s.coveree].forEach(p=>{ if(isExt(p)) extSeen.set(partyKey(p), p); }); });
+  if(extSeen.size){
+    groups.push({label:"Other stations", rows:[...extSeen.values()].map(p=>({key:partyKey(p), label:partyLabel(p), sub:p.s||"other station"}))});
+  }
+  let any=false;
+  groups.forEach(g=>{
+    const rows=g.rows.filter(r=>!q||r.label.toLowerCase().includes(q)).sort((a,b)=>a.label.localeCompare(b.label));
+    if(!rows.length) return;
+    any=true;
+    h+='<div class="grouplbl">'+g.label+'</div>';
+    rows.forEach(r=>{
+      const bal=personBalances(r.key);
+      const owesTot=bal.owes.reduce((a,b)=>a+b.n,0);
+      const owedTot=bal.owed.reduce((a,b)=>a+b.n,0);
+      let badge='';
+      if(owedTot) badge+='<span class="sbbadge pos">+'+owedTot+'</span>';
+      if(owesTot) badge+='<span class="sbbadge neg">-'+owesTot+'</span>';
+      const on = sbStaff===r.key;
+      h+='<button class="staffrow'+(on?' on':'')+'" onclick="selectStaff(\''+r.key+'\')"><span>'+esc(r.label)+'</span><span>'+badge+'</span></button>';
+    });
+  });
+  if(!any) h+='<div class="empty-note">No match.</div>';
+  h+='</div></div></div>';
+
+  // RIGHT: selected party's standing
+  h+='<div class="col">';
+  if(!sbStaff){
+    h+='<div class="panel"><div class="hd"><span>Standby position</span></div><div class="bd"><div class="empty-note">Pick a name to see who they owe standbys to, who owes them, and to log or reconcile standbys. Standbys done at other stations can be logged against an external name.</div></div></div>';
+  } else {
+    const selParty = resolveParty(sbStaff);
+    const name = partyLabel(selParty);
+    const bal=personBalances(sbStaff);
+    h+='<div class="panel"><div class="hd"><span>'+esc(name)+'</span><span>'+esc(partySub(selParty))+'</span></div><div class="bd">';
+
+    h+='<div class="grouplbl neg">'+esc(name)+' owes standbys to</div>';
+    if(!bal.owes.length) h+='<div class="empty-note">Owes no one.</div>';
+    bal.owes.forEach(d=>{
+      h+='<div class="sbrel"><span><b>'+esc(partyLabel(d.party))+'</b> <span class="sbsub">'+esc(partySub(d.party))+'</span></span><span class="sbcount neg">'+d.n+'</span><button class="obtn hold" onclick="reconcilePayback(\''+sbStaff+'\',\''+d.key+'\')">Paid one back</button></div>';
+    });
+
+    h+='<div class="grouplbl pos" style="margin-top:12px">Has covered for · owed back by</div>';
+    if(!bal.owed.length) h+='<div class="empty-note">No one owes '+esc(name)+'.</div>';
+    bal.owed.forEach(d=>{
+      h+='<div class="sbrel"><span><b>'+esc(partyLabel(d.party))+'</b> <span class="sbsub">'+esc(partySub(d.party))+'</span></span><span class="sbcount pos">'+d.n+'</span><button class="obtn rel" onclick="reconcileRepaid(\''+sbStaff+'\',\''+d.key+'\')">They repaid one</button></div>';
+    });
+
+    // log new, with member OR external counterpart
+    h+='<div class="grouplbl" style="margin-top:14px">Log a standby involving '+esc(name)+'</div>';
+    h+='<div style="display:flex;gap:6px;margin-bottom:8px">';
+    h+='<button class="tog'+(sbMode==="member"?" on":"")+'" onclick="sbSetMode(\'member\')">Perth member</button>';
+    h+='<button class="tog'+(sbMode==="ext"?" on":"")+'" onclick="sbSetMode(\'ext\')">Another station</button>';
+    h+='</div>';
+    if(sbMode==="member"){
+      h+='<select class="searchbox" style="margin-bottom:8px" onchange="sbPickSet(this.value)">'+standbyPickOptions()+'</select>';
+    } else {
+      h+='<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
+      h+='<input class="searchbox" style="margin:0;flex:2 1 140px" placeholder="Their name (e.g. Bain)" value="'+esc(sbExtName)+'" oninput="sbExtField(\'name\',this.value)">';
+      h+='<input class="searchbox" style="margin:0;flex:1 1 120px" placeholder="Station (e.g. Ellenbrook)" value="'+esc(sbExtStn)+'" oninput="sbExtField(\'stn\',this.value)">';
+      h+='</div>';
+    }
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    h+='<button class="ctl warn" onclick="logForStaff(\'did\')">'+esc(name)+' covered for them</button>';
+    h+='<button class="ctl warn" onclick="logForStaff(\'got\')">They covered for '+esc(name)+'</button>';
+    h+='</div>';
+    h+='</div></div>';
+  }
+  h+='</div>';
+
+  // FULL LOG
+  h+='<div class="col" style="grid-column:1/-1">';
+  h+='<div class="panel"><div class="hd"><span>Full standby log</span><span>'+state.standbys.length+'</span></div><div class="bd">';
+  if(!state.standbys.length) h+='<div class="empty-note">Nothing logged yet.</div>';
+  state.standbys.forEach(s=>{
+    const rec = s.note==="payback";
+    h+='<div class="ledgerrow"><div><b>'+esc(partyLabel(s.coverer))+'</b> covered for <b>'+esc(partyLabel(s.coveree))+'</b>'+(rec?' <span class="sbbadge pos">reconcile</span>':(s.note?' · '+esc(s.note):''))+'<div class="sbsub">'+esc(s.date)+'</div></div><button class="obtn" style="border-color:var(--faint);color:var(--dim)" onclick="deleteStandby('+s.id+')">Remove</button></div>';
+  });
+  h+='</div></div></div>';
+
+  h+='</div>';
+  document.getElementById("view-standby").innerHTML=h;
+}
+
+function standbyPickOptions(){
+  let o='<option value="">Select a Perth member…</option>';
+  const selId = sbStaff&&sbStaff.startsWith("m:") ? parseInt(sbStaff.slice(2),10) : null;
+  SHIFTS.forEach(sh=>{
+    const g=state.members.filter(m=>m.shift===sh && m.id!==selId).sort((a,b)=>a.name.localeCompare(b.name));
+    if(!g.length) return;
+    o+='<optgroup label="'+sh+' shift">';
+    g.forEach(m=>{ o+='<option value="'+m.id+'"'+(String(sbPick)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>'; });
+    o+='</optgroup>';
+  });
+  const rels=state.members.filter(m=>m.ext && m.id!==selId);
+  if(rels.length){ o+='<optgroup label="External relievers">'; rels.forEach(m=>{ o+='<option value="'+m.id+'"'+(String(sbPick)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>'; }); o+='</optgroup>'; }
+  return o;
+}
+
+function renderBar(sel){
+  const bar=document.getElementById("actionbar");
+  if(confirmBox){
+    bar.innerHTML='<div class="bar danger"><div><div style="font-size:14px;font-weight:800">'+esc(confirmBox.text)+'</div><div class="issues">'+confirmBox.issues.map(i=>'<div>• '+esc(i)+'</div>').join("")+'</div></div><div style="display:flex;gap:8px"><button class="ctl danger" onclick="confirmYes()">Force it</button><button class="ctl" onclick="confirmNo()">Cancel</button></div></div>';
+    return;
+  }
+  if(sel){
+    const tOn = sel.signOn?new Date(sel.signOn):new Date();
+    const hhmm = String(tOn.getHours()).padStart(2,"0")+":"+String(tOn.getMinutes()).padStart(2,"0");
+    const timeEd = sel.status==="on" ? '<span class="ctl" style="display:inline-flex;align-items:center;gap:6px;cursor:default">On <input type="time" value="'+hhmm+'" style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:2px 4px;font-family:inherit" onchange="setSignOnTime('+sel.id+',this.value)"></span>' : '';
+    const staying = sel.status==="on" && canRelieveOut(sel);
+    const stayBtn = staying ? '<button class="ctl'+(sel.staying?' warn':'')+'" onclick="toggleStaying('+sel.id+')">'+(sel.staying?"Staying ✓":"Mark staying")+'</button>' : '';
+    // Build the button row first — closes the flex row div only (leaves outer .bar open)
+    bar.innerHTML='<div class="bar"><div style="font-size:14px;font-weight:700">'+esc(sel.name)+' selected <span style="color:var(--faint);font-weight:500">· tap a seat to move / swap</span></div><div style="display:flex;gap:8px;flex-wrap:wrap">'+timeEd+stayBtn+(sel.status==="on"?'<button class="ctl'+(sel.ot==="Holdback"?' warn':'')+'" onclick="toggleOT('+sel.id+',\'Holdback\')">Holdback</button><button class="ctl'+(sel.ot==="Callback"?' warn':'')+'" onclick="toggleOT('+sel.id+',\'Callback\')">Callback</button><button class="ctl'+(sel.ot==="Super holdback"?' warn':'')+'" onclick="toggleOT('+sel.id+',\'Super holdback\')" title="Held back all through the next shift; released from the shift after">Super holdback</button><button class="ctl'+(sel.ot==="Standby"?' warn':'')+'" onclick="toggleOT('+sel.id+',\'Standby\')">Standby</button><button class="ctl'+(sel.excHours?' warn':'')+'" onclick="toggleExcHours('+sel.id+')">'+(sel.excHours?"Exc hrs ✓":"Excess hrs")+'</button>'+(!sel.seatId?'<button class="ctl" onclick="relieveNextOut('+sel.id+')">Relieve next out</button>':'')+(!sel.seatId&&canRelieveOut(sel)?'<button class="ctl warn" onclick="sendRelieving('+sel.id+')">Send relieving</button>':'')+'<button class="ctl" onclick="removeMistap()" title="Undo a mistaken sign-on — no attendance record, no OT tally hit">Remove (mis-tap)</button><button class="ctl warn" onclick="releaseSelected()">Release off duty</button>':'')+'<button class="ctl" onclick="selectMember('+sel.id+')">Cancel</button></div>';
+    // Send-relieving picker: appears inline inside the same .bar wrapper when in progress.
+    if(relievingOutPicker && relievingOutPicker.memberId===sel.id){
+      const shiftEnd = currentShiftEndMs();
+      const shiftEndLabel = new Date(shiftEnd).getHours()===8 ? "08:00" : "18:00";
+      const today = nowDate();
+      const iso = new Date(today.getFullYear(), today.getMonth(), today.getDate()+1).toISOString().slice(0,10);
+      bar.innerHTML+='<div style="margin-top:10px;padding:10px 12px;background:var(--panel);border:1px solid var(--amber);border-radius:6px"><div style="font-weight:800;letter-spacing:1px;font-size:12px;color:var(--amber);margin-bottom:6px">SENDING '+esc(sel.name)+' RELIEVING — BACK WHEN?</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+        '<button class="ctl" onclick="commitSendRelieving('+sel.id+','+shiftEnd+')">This shift only (back '+shiftEndLabel+')</button>'+
+        '<span class="ctl" style="display:inline-flex;align-items:center;gap:6px;cursor:default">Pick date <input type="date" value="'+(relievingOutPicker.dateVal||iso)+'" onchange="setRelievingOutDate(this.value)" style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-family:inherit" id="rodate"><button class="ctl warn" onclick="commitSendRelievingFromDate('+sel.id+')">Set</button></span>'+
+        '<button class="ctl" onclick="commitSendRelieving('+sel.id+',0)" title="Old behaviour — persists until manually cleared on the roster">Indefinite</button>'+
+        '<button class="ctl" onclick="cancelSendRelieving()">Cancel</button>'+
+      '</div><div class="note" style="margin:6px 0 0">This shift only auto-clears at '+shiftEndLabel+'. Pick date auto-clears at 08:00 on that day.</div></div>';
+    }
+    // Close the outer .bar wrapper exactly once
+    bar.innerHTML+='</div>';
+    return;
+  }
+  bar.innerHTML="";
+}
+function confirmYes(){ if(confirmBox){ const f=confirmBox.onConfirm; confirmBox=null; f(); } }
+function confirmNo(){ confirmBox=null; render(); }
+
+// Live clock. The 1s tick just rewrites the two visible time nodes — no re-render, so it
+// doesn't fight typing or blow the cost up. A full render only fires when the calendar day
+// changes or the rotation clock crosses 06:00 / 08:00 / 16:00 / 18:00 (phase, on-duty shift,
+// or incoming/on transition), so the "ON NOW" line and the green nowdot follow reality.
+let lastPhase = null, lastOnShift = null, lastDate = null;
+function tickClock(){
+  const now = nowDate();
+  const t = fmt(now.getTime());
+  const nt = document.getElementById("nowtime"); if(nt) nt.textContent = t;
+  const sc = document.getElementById("stripclock"); if(sc) sc.textContent = t;
+  const duty = currentDuty(now);
+  const dstr = now.toDateString();
+  if(lastPhase===null){ lastPhase=duty.phase; lastOnShift=duty.shift; lastDate=dstr; return; }
+  if(duty.phase!==lastPhase || duty.shift!==lastOnShift || dstr!==lastDate){
+    lastPhase=duty.phase; lastOnShift=duty.shift; lastDate=dstr;
+    render();
+    return;
+  }
+  // Also re-render if any release note just expired, so cards disappear on time.
+  if(pruneReleases()) render();
+}
+setInterval(tickClock, 1000);
+setInterval(()=>{ if(tab==="board") render(); }, 30000);
+render();
+</script>
+</body>
+</html>
