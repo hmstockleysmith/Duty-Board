@@ -488,6 +488,10 @@ let undoSnap = null;
 // (`rehearsal`, `nowMs`, `nowDate` are declared earlier so currentDuty can use them.)
 let selectedId = null;
 let confirmBox = null;
+let promptBox = null; // {text, placeholder, value, inputType, submitLabel, onSubmit, onCancel} — in-app text prompt.
+// native window.prompt() is unreliable (some browsers throw, and it commonly no-ops in
+// installed/standalone PWA mode with no browser chrome to anchor it — exactly the mode this
+// app is meant to run in on a home screen). This bottom-bar prompt replaces every use of it.
 let tab = "board";
 let signQuery = "";
 let stayingReliever = {}; // {memberId:true} — reliever ticked "staying at Perth" at sign-on: don't send them out, be more eager to seat them
@@ -898,6 +902,12 @@ function toggleExpectedOff(id, reason){
     say(m.name+" marked expected off for the forecast shift ("+m.expectedOff+"). Roster availability unchanged.","info");
   }
   commit();
+}
+function promptBookedOff(id){
+  const m = state.members.find(x=>x.id===id); if(!m) return;
+  openPrompt("Reason "+m.name+" is booked off for the forecast shift?", "PSL, carer's, late etc — optional", (v)=>{
+    toggleExpectedOff(id, (v||"").trim());
+  });
 }
 function clearAllExpectedOff(){
   let n=0;
@@ -2583,7 +2593,7 @@ function renderForecast(){
     h += '<div class="qrow"><span>'+esc(m.name)+hbNote+'</span>'+tagsHTML(m, platoon)+'</div>';
     h += '<div style="padding:4px 0 10px 0;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--line);margin-bottom:6px;flex-wrap:wrap">'+
          '<input type="text" value="'+esc(m.forecastHoldback||"")+'" placeholder="Forecast HB note (e.g. holding till 22:00)" onchange="setForecastHoldback('+m.id+',this.value)" style="flex:1;min-width:180px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font-family:inherit;font-size:12px">'+
-         '<button class="ctl" style="font-size:11px;padding:3px 8px" onclick="toggleExpectedOff('+m.id+',prompt(\'Reason booked off (PSL, carer\\\'s, late etc)?\',\'PSL\')||\'\')">Booked off (PSL etc)</button>'+
+         '<button class="ctl" style="font-size:11px;padding:3px 8px" onclick="promptBookedOff('+m.id+')">Booked off (PSL etc)</button>'+
          (m.forecastHoldback ? '<button class="ctl" style="font-size:11px;padding:3px 8px" onclick="setForecastHoldback('+m.id+',\'\')">Clear HB</button>' : '')+
          '</div>';
   });
@@ -2972,6 +2982,10 @@ function standbyPickOptions(){
 
 function renderBar(sel){
   const bar=document.getElementById("actionbar");
+  if(promptBox){
+    bar.innerHTML='<div class="bar"><div style="flex:1;min-width:220px"><div style="font-size:14px;font-weight:700;margin-bottom:6px">'+esc(promptBox.text)+'</div><input class="searchbox" style="margin:0" type="'+esc(promptBox.inputType)+'" autofocus placeholder="'+esc(promptBox.placeholder)+'" value="'+esc(promptBox.value)+'" oninput="setPromptValue(this.value)" onkeydown="if(event.key===\'Enter\')promptSubmit()"></div><div style="display:flex;gap:8px"><button class="ctl warn" onclick="promptSubmit()">'+esc(promptBox.submitLabel)+'</button><button class="ctl" onclick="promptCancel()">Cancel</button></div></div>';
+    return;
+  }
   if(confirmBox){
     bar.innerHTML='<div class="bar danger"><div><div style="font-size:14px;font-weight:800">'+esc(confirmBox.text)+'</div><div class="issues">'+confirmBox.issues.map(i=>'<div>• '+esc(i)+'</div>').join("")+'</div></div><div style="display:flex;gap:8px"><button class="ctl danger" onclick="confirmYes()">Force it</button><button class="ctl" onclick="confirmNo()">Cancel</button></div></div>';
     return;
@@ -3005,6 +3019,27 @@ function renderBar(sel){
 }
 function confirmYes(){ if(confirmBox){ const f=confirmBox.onConfirm; confirmBox=null; f(); } }
 function confirmNo(){ confirmBox=null; render(); }
+
+// In-app text prompt — see the promptBox declaration for why this replaces window.prompt().
+function openPrompt(text, placeholder, onSubmit, opts){
+  opts = opts || {};
+  promptBox = { text, placeholder: placeholder||"", value: opts.value||"", inputType: opts.inputType||"text", submitLabel: opts.submitLabel||"OK", onSubmit, onCancel: opts.onCancel||null };
+  render();
+}
+function setPromptValue(v){ if(promptBox) promptBox.value = v; }
+function promptSubmit(){
+  if(!promptBox) return;
+  const f = promptBox.onSubmit, v = promptBox.value;
+  promptBox = null;
+  f(v);
+}
+function promptCancel(){
+  if(!promptBox) return;
+  const f = promptBox.onCancel;
+  promptBox = null;
+  render();
+  if(f) f();
+}
 
 // Live clock. The 1s tick just rewrites the two visible time nodes — no re-render, so it
 // doesn't fight typing or blow the cost up. A full render only fires when the calendar day
@@ -3131,15 +3166,23 @@ async function fbPull(){
   }
 }
 
+function fbUiPrompt(text, placeholder){
+  // window.prompt() is unreliable here — some browsers throw, and it commonly no-ops in
+  // installed/standalone PWA mode (no browser chrome to anchor it), which is exactly how
+  // this app is meant to run on a crew's home screen. Uses the app's own bottom-bar prompt.
+  return new Promise(resolve=>{
+    openPrompt(text, placeholder, v=>resolve(v && v.trim() ? v.trim() : null), {inputType:"password", submitLabel:"Confirm", onCancel:()=>resolve(null)});
+  });
+}
 async function fbEnsurePin(){
   if(fbCanWriteNow()) return true;
   if(fbRemotePinHash==null){
-    const pin = prompt("Set a station PIN for this live board (shared with whoever will make changes):");
-    if(!pin || !pin.trim()) return false;
+    const pin = await fbUiPrompt("Set a station PIN for this live board (shared with whoever will make changes):", "e.g. 1234");
+    if(!pin) return false;
     fbPinHashLocal = await fbHashPin(pin);
   } else {
-    const pin = prompt("Enter the station PIN to edit the live board (Cancel keeps this change local-only):");
-    if(!pin || !pin.trim()) return false;
+    const pin = await fbUiPrompt("Enter the station PIN to edit the live board:", "Cancel keeps this change local-only");
+    if(!pin) return false;
     const hash = await fbHashPin(pin);
     if(hash !== fbRemotePinHash){
       say("Incorrect station PIN — change saved on this device only, not sent to the live board.","bad");
