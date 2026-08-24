@@ -43,6 +43,22 @@
   }
 })();
 </script>
+<!-- =====================================================================
+     FIREBASE CONFIG — live shared board (optional, additive).
+     This is the owner's own Firebase project (Firestore, free tier).
+     Everything below degrades to the original local-only board if this
+     is missing, invalid, unreachable, offline, or served over file://.
+     ===================================================================== -->
+<script>
+  window.__DUTY_BOARD_FIREBASE_CONFIG__ = {
+    apiKey: "AIzaSyD_UtRgbUP0b5Lf2AcZwVaoNm0rz5PkmOI",
+    authDomain: "perth-duty-board.firebaseapp.com",
+    projectId: "perth-duty-board",
+    storageBucket: "perth-duty-board.firebasestorage.app",
+    messagingSenderId: "658596376695",
+    appId: "1:658596376695:web:50105e5e554e3946e71672"
+  };
+</script>
 <style>
   :root{
     --bg:#12161b; --panel:#1a2027; --panelhi:#212a33; --line:#2c3843;
@@ -62,6 +78,12 @@
   .shiftsel button.nowdot{position:relative}
   .shiftsel button.nowdot::after{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--green)}
   .dutynow{margin-top:6px;font-size:12px;font-weight:700;letter-spacing:1px;color:var(--green)}
+  .trialline{margin-top:4px;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--amber)}
+  .fbstatus{margin-left:10px;font-weight:800;letter-spacing:1px}
+  .fbstatus.live{color:var(--green)}
+  .fbstatus.local{color:var(--dim)}
+  .fbstatus.readonly{color:var(--amber)}
+  .fbstatus.conflict{color:var(--red)}
   .jumpbtn{margin-left:8px;background:transparent;border:1px solid var(--amber);color:var(--amber);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:800}
   .strip{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
   .chip{display:flex;align-items:baseline;gap:6px;padding:6px 14px;border-radius:8px;border:1px solid}
@@ -211,6 +233,7 @@
   <div>
     <div class="eyebrow">DFES · CAREER FIRE &amp; RESCUE</div>
     <h1>PERTH STATION · E-DUTY BOARD <span class="shiftsel" id="shiftsel"></span></h1>
+    <div class="trialline">TRIAL — not an official DFES system<span class="fbstatus local" id="fbstatus">● LOCAL ONLY</span></div>
     <div class="dutynow" id="dutynow"></div>
   </div>
   <div class="strip" id="strip"></div>
@@ -3007,6 +3030,171 @@ function tickClock(){
 setInterval(tickClock, 1000);
 setInterval(()=>{ if(tab==="board") render(); }, 30000);
 render();
+</script>
+<script>
+"use strict";
+/* ============================================================
+   Live shared board via Firebase (Firestore) — optional, additive.
+   Everything here is layered on top of the local-only board above:
+   local flows (localStorage, undo, rehearsal, SAMS import, exports)
+   are untouched, and every local write still lands in localStorage
+   exactly as before. When Firebase is unset, unreachable, offline,
+   or this is opened over file://, this block quietly does nothing
+   and the board behaves exactly as it did before this file existed.
+
+   Sync model: a single board doc (boards/perth) with a rev counter.
+   On write we transact — refuse to clobber a rev newer than the one
+   we last read, and on conflict reload the authoritative board and
+   tell the user to redo their change. Reads refresh on load and on
+   tab visibilitychange. Writes are gated behind a station PIN, hashed
+   before it ever leaves the device, cached per-device after the first
+   correct entry.
+   ============================================================ */
+const FB_PIN_KEY = "perth-eduty-pin-v1";
+const FB_SDK = "10.14.1";
+let fbEnabled = false;      // SDK loaded, config valid, at least one read has succeeded
+let fbDb = null, fbDocRef = null, fbFns = null;
+let fbRev = 0;               // last known remote revision (baseline for our next write)
+let fbRemotePinHash = null;  // pinHash currently stored on the board doc (null = not set yet)
+let fbPinHashLocal = null;   // this device's cached, verified PIN hash
+let fbPulling = false;
+
+function fbSetStatus(s){
+  const el = document.getElementById("fbstatus");
+  if(!el) return;
+  el.className = "fbstatus " + s;
+  el.textContent = s==="live" ? "● LIVE" : s==="readonly" ? "● LIVE (read-only — enter station PIN to edit)" : s==="conflict" ? "● updated elsewhere — reloading" : "● LOCAL ONLY";
+}
+try{
+  const raw = localStorage.getItem(FB_PIN_KEY);
+  if(raw) fbPinHashLocal = (JSON.parse(raw)||{}).hash || null;
+}catch(e){}
+
+async function fbHashPin(pin){
+  const enc = new TextEncoder().encode(String(pin==null?"":pin).trim());
+  const buf = await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function fbCanWriteNow(){
+  return !!fbPinHashLocal && (fbRemotePinHash==null || fbPinHashLocal===fbRemotePinHash);
+}
+
+async function fbInit(){
+  fbSetStatus("local");
+  if(!location.protocol.startsWith("http")) return; // file:// never touches the network
+  const cfg = window.__DUTY_BOARD_FIREBASE_CONFIG__;
+  if(!cfg || !cfg.apiKey || !cfg.projectId) return; // not configured — stays local-only
+  try{
+    const [appMod, fsMod] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/"+FB_SDK+"/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/"+FB_SDK+"/firebase-firestore.js"),
+    ]);
+    const app = appMod.initializeApp(cfg);
+    fbDb = fsMod.getFirestore(app);
+    fbDocRef = fsMod.doc(fbDb, "boards", "perth");
+    fbFns = fsMod;
+    await fbPull();
+    document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") fbPull(); });
+  }catch(e){
+    console.warn("Live board unavailable, running local-only.", e);
+    fbEnabled = false;
+    fbSetStatus("local");
+  }
+}
+
+async function fbPull(){
+  if(!fbDocRef || fbPulling) return;
+  fbPulling = true;
+  try{
+    const snap = await fbFns.getDoc(fbDocRef);
+    if(snap.exists()){
+      const remote = snap.data();
+      fbRemotePinHash = remote.pinHash || null;
+      if(typeof remote.rev==="number" && remote.rev > fbRev){
+        fbRev = remote.rev;
+        if(!rehearsal && remote.state && Array.isArray(remote.state.members)){
+          state = remote.state;
+          lastCommitted = JSON.stringify(state);
+          try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e2){}
+          selectedId=null; confirmBox=null;
+          render();
+        }
+      }
+    }
+    fbEnabled = true;
+    fbSetStatus(fbCanWriteNow() ? "live" : "readonly");
+  }catch(e){
+    console.warn("Live board pull failed, staying on local copy.", e);
+    fbSetStatus("local");
+  }finally{
+    fbPulling = false;
+  }
+}
+
+async function fbEnsurePin(){
+  if(fbCanWriteNow()) return true;
+  if(fbRemotePinHash==null){
+    const pin = prompt("Set a station PIN for this live board (shared with whoever will make changes):");
+    if(!pin || !pin.trim()) return false;
+    fbPinHashLocal = await fbHashPin(pin);
+  } else {
+    const pin = prompt("Enter the station PIN to edit the live board (Cancel keeps this change local-only):");
+    if(!pin || !pin.trim()) return false;
+    const hash = await fbHashPin(pin);
+    if(hash !== fbRemotePinHash){
+      say("Incorrect station PIN — change saved on this device only, not sent to the live board.","bad");
+      render();
+      return false;
+    }
+    fbPinHashLocal = hash;
+  }
+  try{ localStorage.setItem(FB_PIN_KEY, JSON.stringify({hash: fbPinHashLocal})); }catch(e){}
+  return true;
+}
+
+async function fbPush(){
+  if(!fbEnabled || rehearsal || !fbDocRef) return;
+  try{
+    const authorized = await fbEnsurePin();
+    if(!authorized){ fbSetStatus("readonly"); return; }
+    const expectedRev = fbRev;
+    const payload = {
+      rev: expectedRev + 1,
+      state: JSON.parse(JSON.stringify(state)),
+      pinHash: fbRemotePinHash==null ? fbPinHashLocal : fbRemotePinHash,
+      updatedAt: Date.now()
+    };
+    await fbFns.runTransaction(fbDb, async (tx)=>{
+      const snap = await tx.get(fbDocRef);
+      const curRev = snap.exists() ? (snap.data().rev||0) : 0;
+      if(curRev !== expectedRev) throw {__fbConflict:true};
+      tx.set(fbDocRef, payload);
+    });
+    fbRev = payload.rev;
+    fbRemotePinHash = payload.pinHash;
+    fbSetStatus("live");
+  }catch(e){
+    if(e && e.__fbConflict){
+      say("Board updated by someone else — redo your change.","warn");
+      fbSetStatus("conflict");
+      fbPull().catch(()=>{});
+    } else {
+      console.warn("Live board push failed, staying local-only for now.", e);
+      fbSetStatus("local");
+    }
+  }
+}
+
+// Wrap the existing local save() so every local write also attempts a live push.
+// The original always runs first and unconditionally — a Firebase failure of any
+// kind never affects local persistence.
+const __localSave = save;
+save = function(){
+  __localSave();
+  try{ fbPush(); }catch(e){ console.warn("Live board sync hook failed", e); }
+};
+
+fbInit();
 </script>
 </body>
 </html>
