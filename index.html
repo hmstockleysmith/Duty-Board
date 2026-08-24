@@ -34,12 +34,11 @@
   document.head.appendChild(link);
   // Service worker for offline capability. Only registers when served over http(s) —
   // silently skipped on file:// so the plain downloaded file behaves exactly as before.
+  // Registered from a real sw.js (relative path) rather than a blob URL: some browsers
+  // (notably iOS Safari) refuse to register a worker whose script is a blob: URL.
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-    const swSrc = "const C='perth-duty-v1';self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.add('./')).then(()=>self.skipWaiting()))});self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).then(r=>{const cl=r.clone();caches.open(C).then(c=>c.put(e.request,cl));return r}).catch(()=>caches.match(e.request)))});";
-    const swBlob = new Blob([swSrc], {type: "application/javascript"});
-    navigator.serviceWorker.register(URL.createObjectURL(swBlob), {scope: "./"}).catch(()=>{
-      // Some browsers refuse blob-URL workers; the app still runs, just without offline
-      // caching. A real sw.js file fixes this — see hosting notes.
+    navigator.serviceWorker.register("./sw.js", {scope: "./"}).catch(()=>{
+      // sw.js missing/blocked on this host — app still runs, just without offline caching.
     });
   }
 })();
