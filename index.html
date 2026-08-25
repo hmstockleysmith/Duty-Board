@@ -1044,7 +1044,7 @@ function relieverFormHTML(){
   h+=tog("topo","TOPO")+tog("clp","CLP")+tog("vr","VR")+tog("csr","CSR")+tog("rrs","RRS");
   h+='</div>';
   h+='<div style="display:flex;gap:8px"><button class="ctl warn" onclick="addReliever()">Add to board</button><button class="ctl" onclick="cancelRelieverForm()">Cancel</button></div>';
-  h+='<div class="note" style="margin-top:8px">External relievers come in from another station and are not on any shift roster. They sign on into the relievers pool — seat them or tap Relieve next out if they\'re covering Perth crew. Remove them from the Roster tab afterwards.</div>';
+  h+='<div class="note" style="margin-top:8px">External relievers come in from another station and are not on any shift roster. They sign on into the relievers pool — seat them or tap Relieve next out if they\'re covering Perth crew. Tap Remove here in the External relievers list once they\'re done.</div>';
   return h+'</div>';
 }
 let relSeq = 1000;
@@ -2067,13 +2067,15 @@ function renderBoard(d){
   // Relievers get a "Staying at Perth" checkbox next to their name at sign-on. If ticked,
   // tapping them signs on with staying=true, which prefers seating and blocks send-relieving.
   // Non-relievers keep the plain row.
-  const rowBtn = (m,size) => {
+  const rowBtn = (m,size,showRemove) => {
     if(canRelieveOut(m)){
       const stay = !!stayingReliever[m.id];
       const onclick = stay ? "signOnStaying" : "signOn";
+      const removeBtn = showRemove ? '<button class="ctl danger" style="padding:0 10px;font-size:11px" onclick="removeReliever('+m.id+')" title="Remove — no longer relieving at Perth">Remove</button>' : '';
       return '<div class="relrow" style="display:flex;gap:6px;align-items:stretch;margin-bottom:8px">'+
         '<button class="rowbtn" style="flex:1;margin:0" onclick="'+onclick+'('+m.id+')"><span class="nm"'+(size?' style="font-size:'+size+'"':'')+'>'+esc(m.name)+'</span>'+tagsHTML(m,active)+'</button>'+
         '<label class="tog'+(stay?" on":"")+'" style="display:flex;align-items:center;padding:0 10px;cursor:pointer;font-size:11px" title="Reliever staying at Perth: seat them, don\'t send out"><input type="checkbox" style="display:none" '+(stay?"checked":"")+' onchange="toggleStayingReliever('+m.id+')">STAYING</label>'+
+        removeBtn+
         '</div>';
     }
     return '<button class="rowbtn" style="margin-bottom:8px" onclick="signOn('+m.id+')"><span class="nm"'+(size?' style="font-size:'+size+'"':'')+'>'+esc(m.name)+'</span>'+tagsHTML(m,active)+'</button>';
@@ -2107,7 +2109,7 @@ function renderBoard(d){
   const relMatched = relievers.filter(match);
   colA+='<button class="grouptoggle" onclick="toggleRelievers()">'+(relOpen?"▾":"▸")+' External relievers ('+relMatched.length+')</button>';
   if(relOpen){
-    colA+= relMatched.length ? relMatched.map(m=>rowBtn(m,"14px")).join("") : '<div class="empty-note">None added yet.</div>';
+    colA+= relMatched.length ? relMatched.map(m=>rowBtn(m,"14px",true)).join("") : '<div class="empty-note">None added yet.</div>';
     colA+= relForm
       ? relieverFormHTML()
       : '<button class="ctl" style="margin-top:6px" onclick="openRelieverForm()">+ Add external reliever</button>';
@@ -2740,23 +2742,6 @@ function renderRoster(){
     });
     h+='</details>';
   });
-  const rels = state.members.filter(m=>m.ext&&rmatch(m));
-  if(rels.length){
-    h+='<div class="shifthdr">EXTERNAL RELIEVERS</div>';
-    rels.forEach(m=>{
-      h+='<div class="rmember"><div class="rtop"><div><span class="rname">'+esc(m.name)+'</span> <span class="rrank">'+esc(m.rank==="FF"?(m.cls||"Reliever"):m.rank)+' · from another station</span></div>';
-      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-      h+='<select onchange="setAvail('+m.id+',this.value)">'+STATUSES.map(s=>'<option'+(m.avail===s?' selected':'')+'>'+s+'</option>').join("")+'</select>';
-      h+='<button class="ctl danger" onclick="removeReliever('+m.id+')">Remove</button>';
-      h+='</div></div>';
-      h+='<div class="togs">';
-      if(m.rank!=="SO") h+='<button class="tog'+(m.rank==="SFF"?" on":"")+'" onclick="toggleSenior('+m.id+')">SENIOR</button>';
-      [["topo","TOPO"],["stripe","STRIPE"],["clp","CLP"],["vr","VR"],["csr","CSR"],["rrs","RRS"]].forEach(([k,l])=>{
-        h+='<button class="tog'+(m[k]?" on":"")+'" onclick="toggleTag('+m.id+',\''+k+'\')">'+l+'</button>';
-      });
-      h+='</div></div>';
-    });
-  }
   h+='</div></div></div>';
   document.getElementById("view-roster").innerHTML=h;
 }
