@@ -1,7 +1,7 @@
 // Perth Duty Board service worker — cache-first offline support for the single-page app.
 // Bump CACHE_NAME on every deploy so crews' devices pick up the new build instead of
 // serving a stale cached copy indefinitely.
-const CACHE_NAME = 'perth-duty-v8';
+const CACHE_NAME = 'perth-duty-v9';
 const ASSETS = ['./', './index.html'];
 
 self.addEventListener('install', e => {
