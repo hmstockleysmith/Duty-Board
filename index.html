@@ -247,13 +247,11 @@
   <button id="tab-board" class="active" onclick="setTab('board')">DUTY BOARD</button>
   <button id="tab-forecast" onclick="setTab('forecast')">FORECAST</button>
   <button id="tab-roster" onclick="setTab('roster')">ROSTER &amp; TAGS</button>
-  <button id="tab-standby" onclick="setTab('standby')">STANDBYS</button>
 </nav>
 
 <main id="view-board"></main>
 <main id="view-forecast" class="hidden"></main>
 <main id="view-roster" class="hidden"></main>
-<main id="view-standby" class="hidden"></main>
 
 <div id="actionbar"></div>
 
@@ -1524,99 +1522,6 @@ function setNote(id,val){
 }
 function setRosterQuery(v){ rosterQuery=v; render(); }
 
-// ---- Standby ledger ----
-// A standby: the coverer works a day in place of the coveree. The coveree then owes the coverer one back.
-// A "party" is either a Perth member (numeric id) or an external person {n:name, s:station}.
-// Reconciling logs the reverse standby (the payback), which nets the debt down.
-let sbStaff = null;   // selected party key, e.g. "m:8" or "e:bain|ellenbrook"
-let sbQuery = "";     // name search
-let sbMode = "member";// counterpart entry mode: 'member' or 'ext'
-let sbPick = "";      // counterpart member id (member mode)
-let sbExtName = "";   // counterpart external name (ext mode)
-let sbExtStn = "";    // counterpart external station (ext mode)
-// quick-log form (top of tab): self + direction + counterpart
-let qSelf = "", qDir = "byme", qMode = "ext", qPick = "", qName = "", qStn = "";
-
-const isExt = p => typeof p === "object" && p !== null;
-function partyKey(p){ return isExt(p) ? ("e:"+(p.n||"").trim().toLowerCase()+"|"+(p.s||"").trim().toLowerCase()) : ("m:"+p); }
-function partyLabel(p){ return isExt(p) ? (p.n + (p.s? " @ "+p.s : "")) : memberName(p); }
-function partySub(p){ return isExt(p) ? (p.s||"other station") : memberShift(p); }
-function resolveParty(key){
-  if(key.startsWith("m:")) return parseInt(key.slice(2),10);
-  for(const s of state.standbys){ for(const p of [s.coverer,s.coveree]){ if(isExt(p)&&partyKey(p)===key) return p; } }
-  return null;
-}
-
-function selectStaff(key){ sbStaff = (sbStaff===key?null:key); sbPick=""; sbExtName=""; sbExtStn=""; sbMode="member"; render(); }
-function setSbQuery(v){ sbQuery=v; render(); }
-function sbPickSet(v){ sbPick=v; render(); }
-function sbSetMode(m){ sbMode=m; render(); }
-function sbExtField(k,v){ if(k==="name") sbExtName=v; else sbExtStn=v; render(); }
-
-function logStandby(coverer, coveree, note){
-  if(coverer==null || coveree==null) return;
-  if(partyKey(coverer)===partyKey(coveree)) return;
-  state.standbys.unshift({ id:Date.now()+Math.floor(Math.random()*1000), coverer, coveree, date:new Date().toISOString().slice(0,10), note:note||"" });
-  const c=partyLabel(coverer), o=partyLabel(coveree);
-  say(c+" covered for "+o+". "+o+" owes "+c+" one"+(note?" ("+note+")":"")+".", "ok");
-  commit();
-}
-function counterpartParty(){
-  if(sbMode==="member"){ const id=parseInt(sbPick,10); return id?id:null; }
-  const n=(sbExtName||"").trim(); if(!n) return null;
-  return { n, s:(sbExtStn||"").trim() };
-}
-function logForStaff(direction){
-  const sel = resolveParty(sbStaff);
-  const other = counterpartParty();
-  if(sel==null || other==null){ say("Enter the other person first (pick a Perth member or type an external name).","warn"); render(); return; }
-  if(direction==="did") logStandby(sel, other);   // selected covered for other
-  else logStandby(other, sel);                     // other covered for selected
-  sbPick=""; sbExtName=""; sbExtStn="";
-}
-function reconcilePayback(selKey, otherKey){ logStandby(resolveParty(selKey), resolveParty(otherKey), "payback"); }  // selected pays other back
-function reconcileRepaid(selKey, otherKey){ logStandby(resolveParty(otherKey), resolveParty(selKey), "payback"); }   // other pays selected back
-function deleteStandby(sid){
-  state.standbys = state.standbys.filter(s=>s.id!==sid);
-  say("Standby record removed.","info");
-  commit();
-}
-
-// Quick-log form handlers
-function qSet(k,v){ ({self:()=>qSelf=v, dir:()=>qDir=v, mode:()=>qMode=v, pick:()=>qPick=v, name:()=>qName=v, stn:()=>qStn=v})[k](); render(); }
-function quickLog(){
-  const self = parseInt(qSelf,10);
-  if(!self){ say("Pick your name first.","warn"); render(); return; }
-  let other;
-  if(qMode==="member"){ other = parseInt(qPick,10)||null; }
-  else { const n=(qName||"").trim(); other = n ? {n, s:(qStn||"").trim()} : null; }
-  if(!other){ say("Enter who the standby was with (a Perth member, or a name for another station).","warn"); render(); return; }
-  if(qDir==="byme") logStandby(self, other);   // I covered them -> they owe me
-  else logStandby(other, self);                // they covered me -> I owe them
-  qPick=""; qName=""; qStn="";
-}
-
-// Pairwise standing for one party key: who they owe, and who owes them (reciprocals cancelled).
-function personBalances(key){
-  const pair={};
-  state.standbys.forEach(s=>{ pair[partyKey(s.coverer)+"|"+partyKey(s.coveree)] = (pair[partyKey(s.coverer)+"|"+partyKey(s.coveree)]||0)+1; });
-  const others=new Map();
-  state.standbys.forEach(s=>{
-    if(partyKey(s.coverer)===key) others.set(partyKey(s.coveree), s.coveree);
-    if(partyKey(s.coveree)===key) others.set(partyKey(s.coverer), s.coverer);
-  });
-  const owes=[], owed=[];
-  others.forEach((party,ok)=>{
-    const pCovO = pair[key+"|"+ok]||0;  // sel covered other -> other owes sel
-    const oCovP = pair[ok+"|"+key]||0;  // other covered sel -> sel owes other
-    const net = pCovO - oCovP;
-    if(net>0) owed.push({key:ok, party, n:net});
-    else if(net<0) owes.push({key:ok, party, n:-net});
-  });
-  owes.sort((a,b)=>b.n-a.n); owed.sort((a,b)=>b.n-a.n);
-  return {owes, owed};
-}
-
 const memberName = id => { const m=state.members.find(x=>x.id===id); return m?m.name:"(unknown)"; };
 const memberShift = id => { const m=state.members.find(x=>x.id===id); return m?m.shift:"?"; };
 function setActiveShift(s){ state.shift=s; commit(); }
@@ -1736,6 +1641,10 @@ function toggleOffline(tid){
   say(t.name+(state.offline[tid]?" taken OFFLINE. Its seats no longer flag as shortfalls.":" back ONLINE."), state.offline[tid]?"warn":"ok");
   commit();
 }
+// A standby ledger entry's coverer/coveree is normally a Perth member id, but old entries
+// (from the removed Standbys tab's manual logging) could be an external party {n,s} — kept
+// so toggleOT's swap-unwind below can tell the two apart.
+const isExt = p => typeof p === "object" && p !== null;
 function toggleOT(id, type){
   const m=state.members.find(x=>x.id===id); if(!m) return;
   const wasStandby = m.ot==="Standby";
@@ -1896,14 +1805,6 @@ function toggleExcHours(id){
 
 // ---- Board controls ----
 function toggleShiftMsg(){ showShiftMsg=!showShiftMsg; render(); }
-// Jump to the Standbys tab with the swap half-filled: the standby person covered for someone,
-// so pick the coveree and Log standby records the debt in one tap.
-function logSwapFor(id){
-  const m=state.members.find(x=>x.id===id); if(!m) return;
-  qSelf=String(id); qDir="byme"; qMode="member"; qPick=""; sbStaff="m:"+id; selectedId=null;
-  say("Pick who "+m.name+" is covering for, then Log standby — the debt lands in the ledger.","info");
-  setTab("standby");
-}
 function copyShiftMsg(){
   const txt = generateShiftMessage(state.members);
   if(navigator.clipboard && navigator.clipboard.writeText){
@@ -2058,11 +1959,9 @@ function importJSON(ev){
 function setTab(t){ tab=t;
   document.getElementById("tab-board").classList.toggle("active",t==="board");
   document.getElementById("tab-roster").classList.toggle("active",t==="roster");
-  document.getElementById("tab-standby").classList.toggle("active",t==="standby");
   document.getElementById("tab-forecast").classList.toggle("active",t==="forecast");
   document.getElementById("view-board").classList.toggle("hidden",t!=="board");
   document.getElementById("view-roster").classList.toggle("hidden",t!=="roster");
-  document.getElementById("view-standby").classList.toggle("hidden",t!=="standby");
   document.getElementById("view-forecast").classList.toggle("hidden",t!=="forecast");
   render();
 }
@@ -2153,8 +2052,7 @@ function render(){
 
   if(tab==="board") renderBoard({occ,counts,issues,queue,relPool,incoming,otherShift,relievers,offGoing,sel,active});
   else if(tab==="forecast") renderForecast();
-  else if(tab==="roster") renderRoster();
-  else renderStandbys();
+  else renderRoster();
   renderBar(sel);
 }
 function chip(lbl,val,req){
@@ -2671,12 +2569,24 @@ function renderForecast(){
 let samsPreview = null; // { rows:[{name, matchedId, matchedName, code, newStatus, note}], skipped:[...] }
 const SAMS_CODE_MAP = {
   "AL":"Annual leave", "LSL":"LSL", "PSL":"Sick", "SICK":"Sick",
-  "REL":"Relieving out",
-  "P":"Available", "P(REL)":"Available", "ACT":"Available", "HB":"Available"
+  "REL":"Relieving out", "WC":"Workers comp", "TNG":"Academy",
+  "PL":"Other leave", "PLP":"Other leave", "SHL":"Other leave", "E":"Other leave",
+  // SBY = covering a standby swap (present, working); SBYA = the person they're covering,
+  // absent that shift. Not the same thing as the board's own Standby OT flag/ledger — this
+  // is just their day-sheet availability status.
+  "SBY":"Available", "SBYA":"Other leave",
+  "P":"Available", "P(REL)":"Available", "ACT":"Available", "HB":"Available",
+  "P(ACT)":"Available", "P(E)":"Available", "P(SEC)":"Available"
 };
 // Precedence when the same person appears in multiple rows (e.g. present here as a
 // reliever AND posted out at their substantive): being present here wins.
-const SAMS_CODE_RANK = { "P":0, "P(REL)":0, "HB":0, "ACT":1, "PSL":2, "SICK":2, "AL":3, "LSL":3, "REL":4 };
+const SAMS_CODE_RANK = {
+  "P":0, "P(REL)":0, "HB":0,
+  "ACT":1, "P(ACT)":1, "P(E)":1, "P(SEC)":1, "SBY":1,
+  "PSL":2, "SICK":2, "WC":2,
+  "AL":3, "LSL":3, "PL":3, "PLP":3, "TNG":3, "SHL":3, "E":3, "SBYA":3,
+  "REL":4
+};
 function parseSAMSPaste(text){
   const rows = [], skipped = [];
   const seen = {}; // surname+initial -> row index in rows (for precedence)
@@ -2849,142 +2759,6 @@ function renderRoster(){
   }
   h+='</div></div></div>';
   document.getElementById("view-roster").innerHTML=h;
-}
-
-function renderStandbys(){
-  let h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;grid-column:1/-1">';
-
-  // TOP: quick log (full width)
-  h+='<div class="col" style="grid-column:1/-1"><div class="panel"><div class="hd"><span>Log a standby</span></div><div class="bd">';
-  h+='<div class="qlog">';
-  h+='<label>Your name<select onchange="qSet(\'self\',this.value)"><option value="">Select…</option>'+
-     SHIFTS.map(sh=>{ const g=state.members.filter(m=>m.shift===sh).sort((a,b)=>a.name.localeCompare(b.name)); return g.length?('<optgroup label="'+sh+' shift">'+g.map(m=>'<option value="'+m.id+'"'+(String(qSelf)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>').join("")+'</optgroup>'):""; }).join("")+
-     '</select></label>';
-  h+='<label>What happened<div class="segbtns">'+
-     '<button class="tog'+(qDir==="byme"?" on":"")+'" onclick="qSet(\'dir\',\'byme\')">I did a standby for someone</button>'+
-     '<button class="tog'+(qDir==="forme"?" on":"")+'" onclick="qSet(\'dir\',\'forme\')">Someone did a standby for me</button>'+
-     '</div></label>';
-  h+='<label>Who with<div class="segbtns">'+
-     '<button class="tog'+(qMode==="member"?" on":"")+'" onclick="qSet(\'mode\',\'member\')">Perth member</button>'+
-     '<button class="tog'+(qMode==="ext"?" on":"")+'" onclick="qSet(\'mode\',\'ext\')">Another station</button>'+
-     '</div></label>';
-  if(qMode==="member"){
-    h+='<label>Member<select onchange="qSet(\'pick\',this.value)"><option value="">Select…</option>'+
-       SHIFTS.map(sh=>{ const g=state.members.filter(m=>m.shift===sh&&String(m.id)!==String(qSelf)).sort((a,b)=>a.name.localeCompare(b.name)); return g.length?('<optgroup label="'+sh+' shift">'+g.map(m=>'<option value="'+m.id+'"'+(String(qPick)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>').join("")+'</optgroup>'):""; }).join("")+
-       '</select></label>';
-  } else {
-    h+='<label>Their name<input type="text" placeholder="e.g. Bain" value="'+esc(qName)+'" onchange="qSet(\'name\',this.value)"></label>';
-    h+='<label>Station<input type="text" placeholder="e.g. Ellenbrook" value="'+esc(qStn)+'" onchange="qSet(\'stn\',this.value)"></label>';
-  }
-  h+='<button class="ctl warn" onclick="quickLog()">Log standby</button>';
-  h+='</div>';
-  h+='<div class="note" style="margin-top:8px">"I did a standby for someone" means they now owe you one. "Someone did a standby for me" means you owe them. Use Another station to write in anyone not on the Perth roster.</div>';
-  h+='</div></div></div>';
-
-  // LEFT: clickable list of Perth members + external parties, with open-standby badges
-  const q=sbQuery.trim().toLowerCase();
-  h+='<div class="col">';
-  h+='<div class="panel"><div class="hd"><span>Standby ledger · pick a name</span></div><div class="bd">';
-  h+='<input class="searchbox" placeholder="Search a name…" value="'+esc(sbQuery)+'" oninput="setSbQuery(this.value)">';
-  const groups = SHIFTS.map(sh=>({label:sh+" shift", rows:state.members.filter(m=>m.shift===sh).map(m=>({key:"m:"+m.id, label:m.name, sub:m.shift}))}))
-    .concat([{label:"External relievers on the board", rows:state.members.filter(m=>m.ext).map(m=>({key:"m:"+m.id, label:m.name, sub:"reliever"}))}]);
-  // external parties that only exist in the ledger (other stations)
-  const extSeen=new Map();
-  state.standbys.forEach(s=>{ [s.coverer,s.coveree].forEach(p=>{ if(isExt(p)) extSeen.set(partyKey(p), p); }); });
-  if(extSeen.size){
-    groups.push({label:"Other stations", rows:[...extSeen.values()].map(p=>({key:partyKey(p), label:partyLabel(p), sub:p.s||"other station"}))});
-  }
-  let any=false;
-  groups.forEach(g=>{
-    const rows=g.rows.filter(r=>!q||r.label.toLowerCase().includes(q)).sort((a,b)=>a.label.localeCompare(b.label));
-    if(!rows.length) return;
-    any=true;
-    h+='<div class="grouplbl">'+g.label+'</div>';
-    rows.forEach(r=>{
-      const bal=personBalances(r.key);
-      const owesTot=bal.owes.reduce((a,b)=>a+b.n,0);
-      const owedTot=bal.owed.reduce((a,b)=>a+b.n,0);
-      let badge='';
-      if(owedTot) badge+='<span class="sbbadge pos">+'+owedTot+'</span>';
-      if(owesTot) badge+='<span class="sbbadge neg">-'+owesTot+'</span>';
-      const on = sbStaff===r.key;
-      h+='<button class="staffrow'+(on?' on':'')+'" onclick="selectStaff(\''+r.key+'\')"><span>'+esc(r.label)+'</span><span>'+badge+'</span></button>';
-    });
-  });
-  if(!any) h+='<div class="empty-note">No match.</div>';
-  h+='</div></div></div>';
-
-  // RIGHT: selected party's standing
-  h+='<div class="col">';
-  if(!sbStaff){
-    h+='<div class="panel"><div class="hd"><span>Standby position</span></div><div class="bd"><div class="empty-note">Pick a name to see who they owe standbys to, who owes them, and to log or reconcile standbys. Standbys done at other stations can be logged against an external name.</div></div></div>';
-  } else {
-    const selParty = resolveParty(sbStaff);
-    const name = partyLabel(selParty);
-    const bal=personBalances(sbStaff);
-    h+='<div class="panel"><div class="hd"><span>'+esc(name)+'</span><span>'+esc(partySub(selParty))+'</span></div><div class="bd">';
-
-    h+='<div class="grouplbl neg">'+esc(name)+' owes standbys to</div>';
-    if(!bal.owes.length) h+='<div class="empty-note">Owes no one.</div>';
-    bal.owes.forEach(d=>{
-      h+='<div class="sbrel"><span><b>'+esc(partyLabel(d.party))+'</b> <span class="sbsub">'+esc(partySub(d.party))+'</span></span><span class="sbcount neg">'+d.n+'</span><button class="obtn hold" onclick="reconcilePayback(\''+sbStaff+'\',\''+d.key+'\')">Paid one back</button></div>';
-    });
-
-    h+='<div class="grouplbl pos" style="margin-top:12px">Has covered for · owed back by</div>';
-    if(!bal.owed.length) h+='<div class="empty-note">No one owes '+esc(name)+'.</div>';
-    bal.owed.forEach(d=>{
-      h+='<div class="sbrel"><span><b>'+esc(partyLabel(d.party))+'</b> <span class="sbsub">'+esc(partySub(d.party))+'</span></span><span class="sbcount pos">'+d.n+'</span><button class="obtn rel" onclick="reconcileRepaid(\''+sbStaff+'\',\''+d.key+'\')">They repaid one</button></div>';
-    });
-
-    // log new, with member OR external counterpart
-    h+='<div class="grouplbl" style="margin-top:14px">Log a standby involving '+esc(name)+'</div>';
-    h+='<div style="display:flex;gap:6px;margin-bottom:8px">';
-    h+='<button class="tog'+(sbMode==="member"?" on":"")+'" onclick="sbSetMode(\'member\')">Perth member</button>';
-    h+='<button class="tog'+(sbMode==="ext"?" on":"")+'" onclick="sbSetMode(\'ext\')">Another station</button>';
-    h+='</div>';
-    if(sbMode==="member"){
-      h+='<select class="searchbox" style="margin-bottom:8px" onchange="sbPickSet(this.value)">'+standbyPickOptions()+'</select>';
-    } else {
-      h+='<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
-      h+='<input class="searchbox" style="margin:0;flex:2 1 140px" placeholder="Their name (e.g. Bain)" value="'+esc(sbExtName)+'" oninput="sbExtField(\'name\',this.value)">';
-      h+='<input class="searchbox" style="margin:0;flex:1 1 120px" placeholder="Station (e.g. Ellenbrook)" value="'+esc(sbExtStn)+'" oninput="sbExtField(\'stn\',this.value)">';
-      h+='</div>';
-    }
-    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
-    h+='<button class="ctl warn" onclick="logForStaff(\'did\')">'+esc(name)+' covered for them</button>';
-    h+='<button class="ctl warn" onclick="logForStaff(\'got\')">They covered for '+esc(name)+'</button>';
-    h+='</div>';
-    h+='</div></div>';
-  }
-  h+='</div>';
-
-  // FULL LOG
-  h+='<div class="col" style="grid-column:1/-1">';
-  h+='<div class="panel"><div class="hd"><span>Full standby log</span><span>'+state.standbys.length+'</span></div><div class="bd">';
-  if(!state.standbys.length) h+='<div class="empty-note">Nothing logged yet.</div>';
-  state.standbys.forEach(s=>{
-    const rec = s.note==="payback";
-    h+='<div class="ledgerrow"><div><b>'+esc(partyLabel(s.coverer))+'</b> covered for <b>'+esc(partyLabel(s.coveree))+'</b>'+(rec?' <span class="sbbadge pos">reconcile</span>':(s.note?' · '+esc(s.note):''))+'<div class="sbsub">'+esc(s.date)+'</div></div><button class="obtn" style="border-color:var(--faint);color:var(--dim)" onclick="deleteStandby('+s.id+')">Remove</button></div>';
-  });
-  h+='</div></div></div>';
-
-  h+='</div>';
-  document.getElementById("view-standby").innerHTML=h;
-}
-
-function standbyPickOptions(){
-  let o='<option value="">Select a Perth member…</option>';
-  const selId = sbStaff&&sbStaff.startsWith("m:") ? parseInt(sbStaff.slice(2),10) : null;
-  SHIFTS.forEach(sh=>{
-    const g=state.members.filter(m=>m.shift===sh && m.id!==selId).sort((a,b)=>a.name.localeCompare(b.name));
-    if(!g.length) return;
-    o+='<optgroup label="'+sh+' shift">';
-    g.forEach(m=>{ o+='<option value="'+m.id+'"'+(String(sbPick)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>'; });
-    o+='</optgroup>';
-  });
-  const rels=state.members.filter(m=>m.ext && m.id!==selId);
-  if(rels.length){ o+='<optgroup label="External relievers">'; rels.forEach(m=>{ o+='<option value="'+m.id+'"'+(String(sbPick)===String(m.id)?' selected':'')+'>'+esc(m.name)+'</option>'; }); o+='</optgroup>'; }
-  return o;
 }
 
 function renderBar(sel){
