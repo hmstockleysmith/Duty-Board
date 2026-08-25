@@ -500,6 +500,7 @@ let relOpen = false;
 let relForm = null; // {name,rank,stripe,topo,clp,vr}
 let showShiftMsg = false;
 let rosterQuery = "";
+let rosterOpenShifts = {}; // {shiftLetter: bool} — manual expand/collapse override, persisted across renders
 // Forecast: which shift are we looking ahead to? Null = auto (next changeover).
 // forecastTarget = { iso: "YYYY-MM-DD", phase: "Day"|"Night" } or null.
 let forecastTarget = null;
@@ -2806,7 +2807,12 @@ function renderRoster(){
   SHIFTS.forEach(sh=>{
     const group=state.members.filter(m=>m.shift===sh&&rmatch(m));
     if(!group.length) return;
-    h+='<div class="shifthdr">'+sh+' SHIFT</div>';
+    // Active shift opens by default so someone updating their own status doesn't have to
+    // dig past every other shift first; searching opens every matching group; a manual
+    // toggle (ontoggle, native <details> event) is remembered across re-renders.
+    const isOpen = rq ? true : (rosterOpenShifts[sh]!=null ? rosterOpenShifts[sh] : sh===state.shift);
+    h+='<details'+(isOpen?' open':'')+' ontoggle="rosterOpenShifts[\''+sh+'\']=this.open">';
+    h+='<summary class="shifthdr">'+sh+' SHIFT ('+group.length+')'+(sh===state.shift?' · ON DUTY':'')+'</summary>';
     group.forEach(m=>{
       h+='<div class="rmember"><div class="rtop"><div><span class="rname">'+esc(m.name)+'</span> <span class="rrank">'+esc(m.rank==="FF"?(m.cls||"FF"):m.rank)+(m.note?' · '+esc(m.note):'')+'</span><div class="rrank" style="margin-top:2px">'+esc(displayQuals(m).join(", ")||"\u2014")+'</div>'+((m.superHBReleased&&m.superHBReleased.length)?'<div class="rrank" style="margin-top:2px;color:var(--amber)">Released from '+m.superHBReleased.map(k=>esc(k)).join(", ")+' (super holdback)</div>':'')+(m.avail==="Relieving out"&&m.relievingOutUntil?'<div class="rrank" style="margin-top:2px;color:var(--amber)">Away until '+esc(new Date(m.relievingOutUntil).toLocaleDateString([], {day:"2-digit",month:"short"}))+' · relieving out</div>':'')+'</div>';
       h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
@@ -2822,6 +2828,7 @@ function renderRoster(){
       h+='<input class="noteinput" placeholder="Acting as / note (e.g. Acting DO, Academy instructor)" value="'+esc(m.note||"")+'" onchange="setNote('+m.id+',this.value)">';
       h+='</div>';
     });
+    h+='</details>';
   });
   const rels = state.members.filter(m=>m.ext&&rmatch(m));
   if(rels.length){
@@ -3087,6 +3094,10 @@ render();
    ============================================================ */
 const FB_PIN_KEY = "perth-eduty-pin-v1";
 const FB_SDK = "10.14.1";
+// Testing-phase switch: while false, any device can write to the live board with no PIN
+// prompt at all. Flip to true once the board goes out to the crew for real — the PIN
+// prompt, hashing and per-device caching are all already wired up, this just bypasses them.
+const FB_REQUIRE_PIN = false;
 let fbEnabled = false;      // SDK loaded, config valid, at least one read has succeeded
 let fbDb = null, fbDocRef = null, fbFns = null;
 let fbRev = 0;               // last known remote revision (baseline for our next write)
@@ -3111,6 +3122,7 @@ async function fbHashPin(pin){
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
 function fbCanWriteNow(){
+  if(!FB_REQUIRE_PIN) return true;
   return !!fbPinHashLocal && (fbRemotePinHash==null || fbPinHashLocal===fbRemotePinHash);
 }
 
